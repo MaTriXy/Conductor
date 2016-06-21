@@ -15,27 +15,27 @@ import android.widget.TextView;
 import com.bluelinelabs.conductor.Controller;
 import com.bluelinelabs.conductor.ControllerChangeHandler;
 import com.bluelinelabs.conductor.RouterTransaction;
-import com.bluelinelabs.conductor.changehandler.CircularRevealChangeHandler;
 import com.bluelinelabs.conductor.changehandler.FadeChangeHandler;
 import com.bluelinelabs.conductor.changehandler.HorizontalChangeHandler;
 import com.bluelinelabs.conductor.changehandler.VerticalChangeHandler;
-import com.bluelinelabs.conductor.demo.util.BundleBuilder;
 import com.bluelinelabs.conductor.demo.R;
 import com.bluelinelabs.conductor.demo.changehandler.ArcFadeMoveChangeHandlerCompat;
+import com.bluelinelabs.conductor.demo.changehandler.CircularRevealChangeHandlerCompat;
 import com.bluelinelabs.conductor.demo.changehandler.FlipChangeHandler;
-import com.bluelinelabs.conductor.demo.controllers.base.RefWatchingController;
+import com.bluelinelabs.conductor.demo.controllers.base.BaseController;
+import com.bluelinelabs.conductor.demo.util.BundleBuilder;
 
 import butterknife.Bind;
 import butterknife.ButterKnife;
 import butterknife.OnClick;
 
-public class TransitionDemoController extends RefWatchingController {
+public class TransitionDemoController extends BaseController {
 
     private static final String KEY_INDEX = "TransitionDemoController.index";
 
     public enum TransitionDemo {
         VERTICAL("Vertical Slide Animation", R.layout.controller_transition_demo, R.color.blue_grey_300),
-        CIRCULAR("Circular Reveal Animation", R.layout.controller_transition_demo, R.color.red_300),
+        CIRCULAR("Circular Reveal Animation (on Lollipop and above, else Fade)", R.layout.controller_transition_demo, R.color.red_300),
         FADE("Fade Animation", R.layout.controller_transition_demo, R.color.blue_300),
         FLIP("Flip Animation", R.layout.controller_transition_demo, R.color.deep_orange_300),
         HORIZONTAL("Horizontal Slide Animation", R.layout.controller_transition_demo, R.color.green_300),
@@ -101,6 +101,11 @@ public class TransitionDemoController extends RefWatchingController {
         mTvTitle.setText(mTransitionDemo.title);
     }
 
+    @Override
+    protected String getTitle() {
+        return "Transition Demos";
+    }
+
     @OnClick(R.id.btn_next) void onNextClicked() {
         final int nextIndex = mTransitionDemo.ordinal() + 1;
 
@@ -117,7 +122,7 @@ public class TransitionDemoController extends RefWatchingController {
                 return new VerticalChangeHandler();
             case CIRCULAR:
                 TransitionDemoController demoController = (TransitionDemoController)from;
-                return new CircularRevealChangeHandler(demoController.mBtnNext, demoController.mContainerView);
+                return new CircularRevealChangeHandlerCompat(demoController.mBtnNext, demoController.mContainerView);
             case FADE:
                 return new FadeChangeHandler();
             case FLIP:

@@ -11,6 +11,9 @@ import android.os.Parcelable;
 import android.support.annotation.NonNull;
 import android.util.SparseArray;
 import android.view.LayoutInflater;
+import android.view.Menu;
+import android.view.MenuInflater;
+import android.view.MenuItem;
 import android.view.View;
 import android.view.View.OnAttachStateChangeListener;
 import android.view.ViewGroup;
@@ -18,6 +21,7 @@ import android.view.ViewGroup;
 import com.bluelinelabs.conductor.ControllerTransaction.ControllerChangeType;
 import com.bluelinelabs.conductor.changehandler.SimpleSwapChangeHandler;
 import com.bluelinelabs.conductor.internal.ClassUtils;
+import com.bluelinelabs.conductor.internal.RouterRequiringFunc;
 
 import java.lang.reflect.Constructor;
 import java.util.ArrayList;
@@ -41,7 +45,7 @@ public abstract class Controller {
     private static final String KEY_TARGET_INSTANCE_ID = "Controller.target.instanceId";
     private static final String KEY_ARGS = "Controller.args";
     private static final String KEY_NEEDS_ATTACH = "Controller.needsAttach";
-    private static final String KEY_REQUESTED_PERMISSIONS = "Controller.childControllers";
+    private static final String KEY_REQUESTED_PERMISSIONS = "Controller.requestedPermissions";
     private static final String KEY_OVERRIDDEN_PUSH_HANDLER = "Controller.overriddenPushHandler";
     private static final String KEY_OVERRIDDEN_POP_HANDLER = "Controller.overriddenPopHandler";
     private static final String KEY_VIEW_STATE_HIERARCHY = "Controller.viewState.hierarchy";
@@ -50,9 +54,12 @@ public abstract class Controller {
     private final Bundle mArgs;
 
     private Bundle mViewState;
+    private Bundle mSavedInstanceState;
     private boolean mIsBeingDestroyed;
     private boolean mDestroyed;
     private boolean mAttached;
+    private boolean mHasOptionsMenu;
+    private boolean mOptionsMenuHidden;
     private boolean mViewIsAttached;
     private Router mRouter;
     private View mView;
@@ -60,12 +67,15 @@ public abstract class Controller {
     private String mInstanceId;
     private String mTargetInstanceId;
     private boolean mNeedsAttach;
+    private boolean mHasSavedViewState;
     private ControllerChangeHandler mOverriddenPushHandler;
     private ControllerChangeHandler mOverriddenPopHandler;
     private RetainViewMode mRetainViewMode = RetainViewMode.RELEASE_DETACH;
+    private OnAttachStateChangeListener mOnAttachStateChangeListener;
     private final List<ChildControllerTransaction> mChildControllers = new ArrayList<>();
     private final List<LifecycleListener> mLifecycleListeners = new ArrayList<>();
     private final ArrayList<String> mRequestedPermissions = new ArrayList<>();
+    private final ArrayList<RouterRequiringFunc> mOnRouterSetListeners = new ArrayList<>();
 
     static Controller newInstance(Bundle bundle) {
         final String className = bundle.getString(KEY_CLASS_NAME);
@@ -82,7 +92,7 @@ public abstract class Controller {
                 controller = (Controller)getDefaultConstructor(constructors).newInstance();
             }
         } catch (Exception e) {
-            throw new RuntimeException("An exception occurred while creating a new instance of " + className + ". " + e.getMessage());
+            throw new RuntimeException("An exception occurred while creating a new instance of " + className + ". " + e.getMessage(), e);
         }
 
         controller.restoreInstanceState(bundle);
@@ -112,7 +122,7 @@ public abstract class Controller {
      * for this method will be {@code return inflater.inflate(R.layout.my_layout, container, false);}, plus
      * any binding code.
      *
-     * @param inflater The LayoutInflater that should be used to inflate views
+     * @param inflater  The LayoutInflater that should be used to inflate views
      * @param container The parent view that this Controller's view will eventually be attached to.
      *                  This Controller's view should NOT be added in this method. It is simply passed in
      *                  so that valid LayoutParams can be used during inflation.
@@ -247,15 +257,34 @@ public abstract class Controller {
 
     /**
      * Returns the child Controller with the given instance id, if available.
-     *
      * @param instanceId The instance ID being searched for
      * @return The matching child Controller, if one exists
+     * @deprecated Use {@link #getChildController(String)} or {@link #getChildControllers()} instead.
      */
+    @Deprecated
     public final Controller getChildControllerWithInstanceId(String instanceId) {
         for (ControllerTransaction transaction : mChildControllers) {
             if (transaction.controller.getInstanceId().equals(instanceId)) {
                 return transaction.controller;
             }
+        }
+        return null;
+    }
+
+    /**
+     * Returns the Controller with the given instance id, if available.
+     * May return the controller itself or a matching descendant
+     * @param instanceId The instance ID being searched for
+     * @return The matching Controller, if one exists
+     */
+    final Controller findController(String instanceId) {
+        if (mInstanceId.equals(instanceId))
+            return this;
+
+        for (ControllerTransaction transaction : mChildControllers) {
+            Controller controllerWithId = transaction.controller.findController(instanceId);
+            if (controllerWithId != null)
+                return controllerWithId;
         }
         return null;
     }
@@ -307,7 +336,7 @@ public abstract class Controller {
      * Called when this Controller begins the process of being swapped in or out of the host view.
      *
      * @param changeHandler The {@link ControllerChangeHandler} that's managing the swap
-     * @param changeType The type of change that's occurring
+     * @param changeType    The type of change that's occurring
      */
     protected void onChangeStarted(@NonNull ControllerChangeHandler changeHandler, @NonNull ControllerChangeType changeType) { }
 
@@ -315,7 +344,7 @@ public abstract class Controller {
      * Called when this Controller completes the process of being swapped in or out of the host view.
      *
      * @param changeHandler The {@link ControllerChangeHandler} that's managing the swap
-     * @param changeType The type of change that occurred
+     * @param changeType    The type of change that occurred
      */
     protected void onChangeEnded(@NonNull ControllerChangeHandler changeHandler, @NonNull ControllerChangeType changeType) { }
 
@@ -363,7 +392,7 @@ public abstract class Controller {
      * Controller lifecycle (ex: when another Controller has been pushed on top of it), care should be taken
      * to save anything needed to reconstruct the View.
      *
-     * @param view This Controller's View, passed for convenience
+     * @param view     This Controller's View, passed for convenience
      * @param outState The Bundle into which the View state should be saved
      */
     protected void onSaveViewState(@NonNull View view, @NonNull Bundle outState) { }
@@ -372,7 +401,7 @@ public abstract class Controller {
      * Restores data that was saved in the {@link #onSaveViewState(View, Bundle)} method. This should be overridden
      * to restore the View's state to where it was before it was destroyed.
      *
-     * @param view This Controller's View, passed for convenience
+     * @param view           This Controller's View, passed for convenience
      * @param savedViewState The bundle that has data to be restored
      */
     protected void onRestoreViewState(@NonNull View view, @NonNull Bundle savedViewState) { }
@@ -393,17 +422,42 @@ public abstract class Controller {
     protected void onRestoreInstanceState(@NonNull Bundle savedInstanceState) { }
 
     /**
+     * Calls startActivity(Intent) from this Controller's host Activity.
+     */
+    public final void startActivity(final Intent intent) {
+        executeWithRouter(new RouterRequiringFunc() {
+            @Override public void execute() { mRouter.getLifecycleHandler().startActivity(intent); }
+        });
+    }
+
+    /**
      * Calls startActivityForResult(Intent, int) from this Controller's host Activity.
      */
-    public final void startActivityForResult(Intent intent, int requestCode) {
-        getRouter().getLifecycleHandler().startActivityForResult(mInstanceId, intent, requestCode);
+    public final void startActivityForResult(final Intent intent, final int requestCode) {
+        executeWithRouter(new RouterRequiringFunc() {
+            @Override public void execute() { mRouter.getLifecycleHandler().startActivityForResult(mInstanceId, intent, requestCode); }
+        });
     }
 
     /**
      * Calls startActivityForResult(Intent, int, Bundle) from this Controller's host Activity.
      */
-    public final void startActivityForResult(Intent intent, int requestCode, Bundle options) {
-        getRouter().getLifecycleHandler().startActivityForResult(mInstanceId, intent, requestCode, options);
+    public final void startActivityForResult(final Intent intent, final int requestCode, final Bundle options) {
+        executeWithRouter(new RouterRequiringFunc() {
+            @Override public void execute() { mRouter.getLifecycleHandler().startActivityForResult(mInstanceId, intent, requestCode, options); }
+        });
+    }
+
+    /**
+     * Registers this Controller to handle onActivityResult responses. Calling this method is NOT
+     * necessary when calling {@link #startActivityForResult(Intent, int)}
+     *
+     * @param requestCode The request code being registered for.
+     */
+    public final void registerForActivityResult(final int requestCode) {
+        executeWithRouter(new RouterRequiringFunc() {
+            @Override public void execute() { mRouter.getLifecycleHandler().registerForActivityRequest(mInstanceId, requestCode); }
+        });
     }
 
     /**
@@ -411,8 +465,8 @@ public abstract class Controller {
      * the result.
      *
      * @param requestCode The requestCode passed to startActivityForResult
-     * @param resultCode The resultCode that was returned to the host Activity's onActivityResult method
-     * @param data The data Intent that was returned to the host Activity's onActivityResult method
+     * @param resultCode  The resultCode that was returned to the host Activity's onActivityResult method
+     * @param data        The data Intent that was returned to the host Activity's onActivityResult method
      */
     public void onActivityResult(int requestCode, int resultCode, Intent data) { }
 
@@ -422,9 +476,12 @@ public abstract class Controller {
      * {@link #onRequestPermissionsResult(int, String[], int[])} will be forwarded back to this Controller by the system.
      */
     @TargetApi(Build.VERSION_CODES.M)
-    public final void requestPermissions(@NonNull String[] permissions, int requestCode) {
+    public final void requestPermissions(@NonNull final String[] permissions, final int requestCode) {
         mRequestedPermissions.addAll(Arrays.asList(permissions));
-        getRouter().getLifecycleHandler().requestPermissions(mInstanceId, permissions, requestCode);
+
+        executeWithRouter(new RouterRequiringFunc() {
+            @Override public void execute() { mRouter.getLifecycleHandler().requestPermissions(mInstanceId, permissions, requestCode); }
+        });
     }
 
     /**
@@ -440,8 +497,8 @@ public abstract class Controller {
     /**
      * Should be overridden if this Controller has requested runtime permissions and needs to handle the user's response.
      *
-     * @param requestCode The requestCode that was used to request the permissions
-     * @param permissions The array of permissions requested
+     * @param requestCode  The requestCode that was used to request the permissions
+     * @param permissions  The array of permissions requested
      * @param grantResults The results for each permission requested
      */
     public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions, @NonNull int[] grantResults) { }
@@ -533,6 +590,66 @@ public abstract class Controller {
         mOverriddenPopHandler = overriddenPopHandler;
     }
 
+    /**
+     * Registers/unregisters for participation in populating the options menu by receiving options-related
+     * callbacks, such as {@link #onCreateOptionsMenu(Menu, MenuInflater)}
+     *
+     * @param hasOptionsMenu If true, this controller's options menu callbacks will be called.
+     */
+    public final void setHasOptionsMenu(boolean hasOptionsMenu) {
+        boolean invalidate = mAttached && !mOptionsMenuHidden && mHasOptionsMenu != hasOptionsMenu;
+
+        mHasOptionsMenu = hasOptionsMenu;
+
+        if (invalidate) {
+            mRouter.invalidateOptionsMenu();
+        }
+    }
+
+    /**
+     * Sets whether or not this controller's menu items should be visible. This is useful for hiding the
+     * controller's options menu items when its UI is hidden, and not just when it is detached from the
+     * window (the default).
+     *
+     * @param optionsMenuHidden Defaults to false. If true, this controller's menu items will not be shown.
+     */
+    public final void setOptionsMenuHidden(boolean optionsMenuHidden) {
+        boolean invalidate = mAttached && mHasOptionsMenu && mOptionsMenuHidden != optionsMenuHidden;
+
+        mOptionsMenuHidden = optionsMenuHidden;
+
+        if (invalidate) {
+            mRouter.invalidateOptionsMenu();
+        }
+    }
+
+    /**
+     * Adds option items to the host Activity's standard options menu. This will only be called if
+     * {@link #setHasOptionsMenu(boolean)} has been called.
+     *
+     * @param menu The menu into which your options should be placed.
+     * @param inflater The inflater that can be used to inflate your menu items.
+     */
+    public void onCreateOptionsMenu(Menu menu, MenuInflater inflater) { }
+
+    /**
+     * Prepare the screen's options menu to be displayed. This is called directly before showing the
+     * menu and can be used modify its contents.
+     *
+     * @param menu The menu that will be displayed
+     */
+    public void onPrepareOptionsMenu(Menu menu) { }
+
+    /**
+     * Called when an option menu item has been selected by the user.
+     *
+     * @param item The selected item.
+     * @return True if this event has been consumed, false if it has not.
+     */
+    public boolean onOptionsItemSelected(MenuItem item) {
+        return false;
+    }
+
     final void prepareForActivityPause() {
         mNeedsAttach = mNeedsAttach || mAttached;
     }
@@ -551,10 +668,29 @@ public abstract class Controller {
     }
 
     final void setRouter(@NonNull Router router) {
-        mRouter = router;
+        if (mRouter != router) {
+            mRouter = router;
 
-        for (ChildControllerTransaction child : mChildControllers) {
-            child.controller.setRouter(router);
+            performOnRestoreInstanceState();
+
+            for (RouterRequiringFunc listener : mOnRouterSetListeners) {
+                listener.execute();
+            }
+            mOnRouterSetListeners.clear();
+
+            for (ChildControllerTransaction child : mChildControllers) {
+                child.controller.setRouter(router);
+            }
+        } else {
+            performOnRestoreInstanceState();
+        }
+    }
+
+    final void executeWithRouter(@NonNull RouterRequiringFunc listener) {
+        if (mRouter != null) {
+            listener.execute();
+        } else {
+            mOnRouterSetListeners.add(listener);
         }
     }
 
@@ -631,6 +767,8 @@ public abstract class Controller {
     }
 
     private void attach(@NonNull View view) {
+        mHasSavedViewState = false;
+
         for (LifecycleListener lifecycleListener : mLifecycleListeners) {
             lifecycleListener.preAttach(this, view);
         }
@@ -643,6 +781,10 @@ public abstract class Controller {
         }
 
         onAttach(view);
+
+        if (mHasOptionsMenu && !mOptionsMenuHidden) {
+            mRouter.invalidateOptionsMenu();
+        }
 
         for (LifecycleListener lifecycleListener : mLifecycleListeners) {
             lifecycleListener.postAttach(this, view);
@@ -660,19 +802,23 @@ public abstract class Controller {
             mAttached = false;
             onDetach(view);
 
+            if (mHasOptionsMenu && !mOptionsMenuHidden) {
+                mRouter.invalidateOptionsMenu();
+            }
+
             for (ChildControllerTransaction child : mChildControllers) {
                 ViewGroup container = (ViewGroup)mView.findViewById(child.containerId);
                 if (container != null) {
                     container.removeView(child.controller.getView());
                 }
             }
+            
+            for (LifecycleListener lifecycleListener : mLifecycleListeners) {
+                lifecycleListener.postDetach(this, view);
+            }
 
             if (removeViewRef) {
                 removeViewReference();
-            }
-
-            for (LifecycleListener lifecycleListener : mLifecycleListeners) {
-                lifecycleListener.postDetach(this, view);
             }
         } else if (removeViewRef) {
             removeViewReference();
@@ -681,7 +827,7 @@ public abstract class Controller {
 
     private void removeViewReference() {
         if (mView != null) {
-            if (!mIsBeingDestroyed) {
+            if (!mIsBeingDestroyed && !mHasSavedViewState) {
                 saveViewState(mView);
             }
 
@@ -691,6 +837,7 @@ public abstract class Controller {
 
             onDestroyView(mView);
 
+            mView.removeOnAttachStateChangeListener(mOnAttachStateChangeListener);
             mView = null;
 
             for (LifecycleListener lifecycleListener : mLifecycleListeners) {
@@ -704,6 +851,11 @@ public abstract class Controller {
     }
 
     final View inflate(@NonNull ViewGroup parent) {
+        if (mView != null && mView.getParent() != null && mView.getParent() != parent) {
+            detach(mView, true);
+            removeViewReference();
+        }
+
         if (mView == null) {
             for (LifecycleListener lifecycleListener : mLifecycleListeners) {
                 lifecycleListener.preCreateView(this);
@@ -711,9 +863,13 @@ public abstract class Controller {
 
             mView = onCreateView(LayoutInflater.from(parent.getContext()), parent);
 
+            for (LifecycleListener lifecycleListener : mLifecycleListeners) {
+                lifecycleListener.postCreateView(this, mView);
+            }
+
             restoreViewState(mView);
 
-            mView.addOnAttachStateChangeListener(new OnAttachStateChangeListener() {
+            mOnAttachStateChangeListener = new OnAttachStateChangeListener() {
                 @Override
                 public void onViewAttachedToWindow(View v) {
                     if (v == mView) {
@@ -727,11 +883,8 @@ public abstract class Controller {
                     mViewIsAttached = false;
                     detach(v, true);
                 }
-            });
-
-            for (LifecycleListener lifecycleListener : mLifecycleListeners) {
-                lifecycleListener.postCreateView(this, mView);
-            }
+            };
+            mView.addOnAttachStateChangeListener(mOnAttachStateChangeListener);
         }
 
         return mView;
@@ -744,6 +897,10 @@ public abstract class Controller {
             }
 
             mDestroyed = true;
+
+            if (mRouter != null) {
+                mRouter.getLifecycleHandler().unregisterForActivityRequests(mInstanceId);
+            }
 
             onDestroy();
 
@@ -772,6 +929,8 @@ public abstract class Controller {
     }
 
     final void saveViewState(@NonNull View view) {
+        mHasSavedViewState = true;
+
         mViewState = new Bundle();
 
         SparseArray<Parcelable> hierarchyState = new SparseArray<>();
@@ -787,6 +946,10 @@ public abstract class Controller {
                 child.controller.saveViewState(child.controller.mView);
             }
         }
+
+        for (LifecycleListener lifecycleListener : mLifecycleListeners) {
+            lifecycleListener.onSaveViewState(this, mViewState);
+        }
     }
 
     final void restoreViewState(@NonNull View view) {
@@ -799,6 +962,10 @@ public abstract class Controller {
                     child.controller.restoreViewState(child.controller.mView);
                 }
             }
+
+            for (LifecycleListener lifecycleListener : mLifecycleListeners) {
+                lifecycleListener.onRestoreViewState(this, mViewState);
+            }
         }
     }
 
@@ -807,8 +974,12 @@ public abstract class Controller {
             detach(mView, mIsBeingDestroyed);
         }
 
+        if (!mHasSavedViewState && mView != null) {
+            saveViewState(mView);
+        }
+
         Bundle outState = new Bundle();
-        outState.putString(KEY_CLASS_NAME, getClass().getCanonicalName());
+        outState.putString(KEY_CLASS_NAME, getClass().getName());
         outState.putBundle(KEY_VIEW_STATE, mViewState);
         outState.putBundle(KEY_ARGS, mArgs);
         outState.putString(KEY_INSTANCE_ID, mInstanceId);
@@ -855,11 +1026,19 @@ public abstract class Controller {
             addChildController(new ChildControllerTransaction(childBundle));
         }
 
-        Bundle savedState = savedInstanceState.getBundle(KEY_SAVED_STATE);
-        onRestoreInstanceState(savedState);
+        mSavedInstanceState = savedInstanceState.getBundle(KEY_SAVED_STATE);
+        performOnRestoreInstanceState();
+    }
 
-        for (LifecycleListener lifecycleListener : mLifecycleListeners) {
-            lifecycleListener.onRestoreInstanceState(this, savedState);
+    private void performOnRestoreInstanceState() {
+        if (mSavedInstanceState != null && mRouter != null) {
+            onRestoreInstanceState(mSavedInstanceState);
+
+            for (LifecycleListener lifecycleListener : mLifecycleListeners) {
+                lifecycleListener.onRestoreInstanceState(this, mSavedInstanceState);
+            }
+
+            mSavedInstanceState = null;
         }
     }
 
@@ -877,6 +1056,45 @@ public abstract class Controller {
         for (LifecycleListener lifecycleListener : mLifecycleListeners) {
             lifecycleListener.onChangeEnd(this, changeHandler, changeType);
         }
+    }
+
+    final void createOptionsMenu(Menu menu, MenuInflater inflater) {
+        if (mAttached) {
+            if (mHasOptionsMenu && !mOptionsMenuHidden) {
+                onCreateOptionsMenu(menu, inflater);
+            }
+
+            for (ChildControllerTransaction child : mChildControllers) {
+                child.controller.createOptionsMenu(menu, inflater);
+            }
+        }
+    }
+
+    final void prepareOptionsMenu(Menu menu) {
+        if (mAttached) {
+            if (mHasOptionsMenu && !mOptionsMenuHidden) {
+                onPrepareOptionsMenu(menu);
+            }
+
+            for (ChildControllerTransaction child : mChildControllers) {
+                child.controller.onPrepareOptionsMenu(menu);
+            }
+        }
+    }
+
+    final boolean optionsItemSelected(MenuItem item) {
+        if (mAttached) {
+            if (mHasOptionsMenu && !mOptionsMenuHidden && onOptionsItemSelected(item)) {
+                return true;
+            }
+
+            for (ChildControllerTransaction child : mChildControllers) {
+                if (child.controller.onOptionsItemSelected(item)) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
     private void ensureRequiredConstructor() {
@@ -935,6 +1153,9 @@ public abstract class Controller {
 
         public void onSaveInstanceState(@NonNull Controller controller, @NonNull Bundle outState) { }
         public void onRestoreInstanceState(@NonNull Controller controller, @NonNull Bundle savedInstanceState) { }
+
+        public void onSaveViewState(@NonNull Controller controller, @NonNull Bundle outState) { }
+        public void onRestoreViewState(@NonNull Controller controller, @NonNull Bundle savedViewState) { }
     }
 
 }

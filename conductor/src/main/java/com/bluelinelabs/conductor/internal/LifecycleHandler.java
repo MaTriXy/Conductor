@@ -9,6 +9,9 @@ import android.os.Build;
 import android.os.Bundle;
 import android.support.annotation.NonNull;
 import android.util.SparseArray;
+import android.view.Menu;
+import android.view.MenuInflater;
+import android.view.MenuItem;
 import android.view.ViewGroup;
 
 import com.bluelinelabs.conductor.Router;
@@ -33,6 +36,7 @@ public class LifecycleHandler extends Fragment implements ActivityLifecycleCallb
 
     public LifecycleHandler() {
         setRetainInstance(true);
+        setHasOptionsMenu(true);
     }
 
     private static LifecycleHandler findInActivity(Activity activity) {
@@ -57,13 +61,16 @@ public class LifecycleHandler extends Fragment implements ActivityLifecycleCallb
         Router router = mRouterMap.get(getRouterHashKey(container));
         if (router == null) {
             router = new Router();
+            router.setHost(this, container);
+
             if (savedInstanceState != null) {
                 router.onRestoreInstanceState(savedInstanceState);
             }
             mRouterMap.put(getRouterHashKey(container), router);
+        } else {
+            router.setHost(this, container);
         }
 
-        router.setHost(this, container);
         return router;
     }
 
@@ -155,13 +162,54 @@ public class LifecycleHandler extends Fragment implements ActivityLifecycleCallb
         return super.shouldShowRequestPermissionRationale(permission);
     }
 
-    public void startActivityForResult(String instanceId, Intent intent, int requestCode) {
+    @Override
+    public void onCreateOptionsMenu(Menu menu, MenuInflater inflater) {
+        super.onCreateOptionsMenu(menu, inflater);
+
+        for (Router router : mRouterMap.values()) {
+            router.onCreateOptionsMenu(menu, inflater);
+        }
+    }
+
+    @Override
+    public void onPrepareOptionsMenu(Menu menu) {
+        super.onPrepareOptionsMenu(menu);
+
+        for (Router router : mRouterMap.values()) {
+            router.onPrepareOptionsMenu(menu);
+        }
+    }
+
+    @Override
+    public boolean onOptionsItemSelected(MenuItem item) {
+        for (Router router : mRouterMap.values()) {
+            if (router.onOptionsItemSelected(item)) {
+                return true;
+            }
+        }
+
+        return super.onOptionsItemSelected(item);
+    }
+
+    public void registerForActivityRequest(String instanceId, int requestCode) {
         mActivityRequestMap.put(requestCode, instanceId);
+    }
+
+    public void unregisterForActivityRequests(String instanceId) {
+        for (int i = mActivityRequestMap.size() - 1; i >= 0; i--) {
+            if (instanceId.equals(mActivityRequestMap.get(mActivityRequestMap.keyAt(i)))) {
+                mActivityRequestMap.removeAt(i);
+            }
+        }
+    }
+
+    public void startActivityForResult(String instanceId, Intent intent, int requestCode) {
+        registerForActivityRequest(instanceId, requestCode);
         startActivityForResult(intent, requestCode);
     }
 
     public void startActivityForResult(String instanceId, Intent intent, int requestCode, Bundle options) {
-        mActivityRequestMap.put(requestCode, instanceId);
+        registerForActivityRequest(instanceId, requestCode);
         startActivityForResult(intent, requestCode, options);
     }
 

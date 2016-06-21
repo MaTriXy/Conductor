@@ -1,15 +1,13 @@
 package com.bluelinelabs.conductor;
 
 import android.app.Activity;
-import android.support.annotation.NonNull;
+import android.content.Intent;
+import android.os.Bundle;
+import android.support.annotation.IdRes;
 import android.view.View;
-import android.view.ViewGroup;
 import android.widget.FrameLayout;
 
-import com.bluelinelabs.conductor.Controller.LifecycleListener;
 import com.bluelinelabs.conductor.Controller.RetainViewMode;
-import com.bluelinelabs.conductor.ControllerChangeHandler.ControllerChangeCompletedListener;
-import com.bluelinelabs.conductor.ControllerTransaction.ControllerChangeType;
 
 import org.junit.Assert;
 import org.junit.Before;
@@ -27,148 +25,22 @@ public class ControllerTests {
     private ActivityController<TestActivity> mActivityController;
     private Router mRouter;
 
-    private int mChangeStartCalls;
-    private int mChangeEndCalls;
-    private int mCreateViewCalls;
-    private int mAttachCalls;
-    private int mDestroyViewCalls;
-    private int mDetachCalls;
-    private int mDestroyCalls;
+    public void createActivityController(Bundle savedInstanceState) {
+        mActivityController = Robolectric.buildActivity(TestActivity.class).create(savedInstanceState).start();
+
+        @IdRes int containerId = 4;
+        FrameLayout routerContainer = new FrameLayout(mActivityController.get());
+        routerContainer.setId(containerId);
+
+        mRouter = Conductor.attachRouter(mActivityController.get(), routerContainer, savedInstanceState);
+        if (!mRouter.hasRootController()) {
+            mRouter.setRoot(new TestController());
+        }
+    }
 
     @Before
     public void setup() {
-        mActivityController = Robolectric.buildActivity(TestActivity.class).create();
-        Activity activity = mActivityController.get();
-        mRouter = Conductor.attachRouter(activity, new FrameLayout(activity), null);
-        mRouter.setRoot(new TestController());
-
-        mChangeStartCalls = 0;
-        mChangeEndCalls = 0;
-        mCreateViewCalls = 0;
-        mAttachCalls = 0;
-        mDestroyViewCalls = 0;
-        mDestroyCalls = 0;
-        mDestroyCalls = 0;
-    }
-
-    @Test
-    public void testNormalLifecycle() {
-        Controller controller = new TestController();
-        attachLifecycleListener(controller);
-
-        assertCalls(0, 0, 0, 0, 0, 0, 0);
-        mRouter.pushController(RouterTransaction.builder(controller)
-                .pushChangeHandler(getPushHandler(0, 0, 0, 0, 0, 0, 0))
-                .popChangeHandler(getPopHandler(1, 1, 1, 1, 0, 0, 0))
-                .build()
-        );
-
-        assertCalls(1, 1, 1, 1, 0, 0, 0);
-
-        mRouter.popCurrentController();
-
-        Assert.assertNull(controller.getView());
-
-        assertCalls(2, 2, 1, 1, 1, 1, 1);
-    }
-
-    @Test
-    public void testLifecycleWithActivityDestroy() {
-        Controller controller = new TestController();
-        attachLifecycleListener(controller);
-
-        assertCalls(0, 0, 0, 0, 0, 0, 0);
-        mRouter.pushController(RouterTransaction.builder(controller)
-                .pushChangeHandler(getPushHandler(0, 0, 0, 0, 0, 0, 0))
-                .build()
-        );
-
-        assertCalls(1, 1, 1, 1, 0, 0, 0);
-
-        mActivityController.pause();
-
-        assertCalls(1, 1, 1, 1, 0, 0, 0);
-
-        mActivityController.stop();
-
-        assertCalls(1, 1, 1, 1, 0, 0, 0);
-
-        mActivityController.destroy();
-
-        assertCalls(1, 1, 1, 1, 1, 1, 1);
-    }
-
-    @Test
-    public void testChildLifecycle() {
-        Controller parent = new TestController();
-        mRouter.pushController(RouterTransaction.builder(parent)
-                .pushChangeHandler(new ChangeHandler(new ChangeHandlerListener() {
-                    @Override
-                    public void performChange(@NonNull ViewGroup container, View from, View to, boolean isPush, @NonNull ControllerChangeCompletedListener changeListener) {
-                        container.addView(to);
-                        ViewUtils.setAttached(to, true);
-                        changeListener.onChangeCompleted();
-                    }
-                }))
-                .build());
-
-        Controller child = new TestController();
-        attachLifecycleListener(child);
-
-        assertCalls(0, 0, 0, 0, 0, 0, 0);
-
-        parent.addChildController(ChildControllerTransaction.builder(child, TestController.VIEW_ID)
-                .pushChangeHandler(getPushHandler(0, 0, 0, 0, 0, 0, 0))
-                .popChangeHandler(getPopHandler(1, 1, 1, 1, 0, 0, 0))
-                .build()
-        );
-
-        assertCalls(1, 1, 1, 1, 0, 0, 0);
-
-        parent.removeChildController(child);
-
-        assertCalls(2, 2, 1, 1, 1, 1, 1);
-    }
-
-    @Test
-    public void testChildLifecycle2() {
-        Controller parent = new TestController();
-        mRouter.pushController(RouterTransaction.builder(parent)
-                .pushChangeHandler(new ChangeHandler(new ChangeHandlerListener() {
-                    @Override
-                    public void performChange(@NonNull ViewGroup container, View from, View to, boolean isPush, @NonNull ControllerChangeCompletedListener changeListener) {
-                        container.addView(to);
-                        ViewUtils.setAttached(to, true);
-                        changeListener.onChangeCompleted();
-                    }
-                }))
-                .popChangeHandler(new ChangeHandler(new ChangeHandlerListener() {
-                    @Override
-                    public void performChange(@NonNull ViewGroup container, View from, View to, boolean isPush, @NonNull ControllerChangeCompletedListener changeListener) {
-                        container.removeView(from);
-                        ViewUtils.setAttached(from, false);
-                        changeListener.onChangeCompleted();
-                    }
-                }))
-                .build());
-
-        Controller child = new TestController();
-        attachLifecycleListener(child);
-
-        assertCalls(0, 0, 0, 0, 0, 0, 0);
-
-        parent.addChildController(ChildControllerTransaction.builder(child, TestController.VIEW_ID)
-                .pushChangeHandler(getPushHandler(0, 0, 0, 0, 0, 0, 0))
-                .popChangeHandler(getPopHandler(1, 1, 1, 1, 0, 0, 0))
-                .build()
-        );
-
-        assertCalls(1, 1, 1, 1, 0, 0, 0);
-
-        mRouter.popCurrentController();
-        ViewUtils.setAttached(child.getView(), false);
-
-        assertCalls(1, 1, 1, 1, 1, 1, 1);
+        createActivityController(null);
     }
 
     @Test
@@ -199,98 +71,205 @@ public class ControllerTests {
         Assert.assertNull(controller.getView());
     }
 
-    private ChangeHandler getPushHandler(final int changeStart, final int changeEnd, final int bindView, final int attach, final int unbindView, final int detach, final int destroy) {
-        return new ChangeHandler(new ChangeHandlerListener() {
-            @Override
-            public void performChange(@NonNull ViewGroup container, View from, View to, boolean isPush, @NonNull ControllerChangeCompletedListener changeListener) {
-                assertCalls(changeStart + 1, changeEnd, bindView + 1, attach, unbindView, detach, destroy);
-                container.addView(to);
-                ViewUtils.setAttached(to, true);
-                assertCalls(changeStart + 1, changeEnd, bindView + 1, attach + 1, unbindView, detach, destroy);
-                changeListener.onChangeCompleted();
-            }
-        });
+    @Test
+    public void testActivityResult() {
+        TestController controller = new TestController();
+        CallState expectedCallState = new CallState(true);
+
+        mRouter.pushController(RouterTransaction.builder(controller).build());
+        ViewUtils.setAttached(controller.getView(), true);
+
+        // Ensure that calling onActivityResult w/o requesting a result doesn't do anything
+        mRouter.onActivityResult(1, Activity.RESULT_OK, null);
+        assertCalls(expectedCallState, controller);
+
+        // Ensure starting an activity for result gets us the result back
+        controller.startActivityForResult(new Intent("action"), 1);
+        mRouter.onActivityResult(1, Activity.RESULT_OK, null);
+        expectedCallState.onActivityResultCalls++;
+        assertCalls(expectedCallState, controller);
+
+        // Ensure requesting a result w/o calling startActivityForResult works
+        controller.registerForActivityResult(2);
+        mRouter.onActivityResult(2, Activity.RESULT_OK, null);
+        expectedCallState.onActivityResultCalls++;
+        assertCalls(expectedCallState, controller);
     }
 
-    private ChangeHandler getPopHandler(final int changeStart, final int changeEnd, final int bindView, final int attach, final int unbindView, final int detach, final int destroy) {
-        return new ChangeHandler(new ChangeHandlerListener() {
-            @Override
-            public void performChange(@NonNull ViewGroup container, View from, View to, boolean isPush, @NonNull ControllerChangeCompletedListener changeListener) {
-                assertCalls(changeStart + 1, changeEnd, bindView, attach, unbindView, detach, destroy);
-                container.removeView(from);
-                ViewUtils.setAttached(from, false);
-                assertCalls(changeStart + 1, changeEnd, bindView, attach, unbindView + 1, detach + 1, destroy + 1);
-                changeListener.onChangeCompleted();
-            }
-        });
+    @Test
+    public void testActivityResultForChild() {
+        TestController parent = new TestController();
+        TestController child = new TestController();
+
+        mRouter.pushController(RouterTransaction.builder(parent).build());
+        ViewUtils.setAttached(parent.getView(), true);
+        parent.addChildController(ChildControllerTransaction.builder(child, TestController.VIEW_ID).build());
+        ViewUtils.setAttached(child.getView(), true);
+
+        CallState childExpectedCallState = new CallState(true);
+        CallState parentExpectedCallState = new CallState(true);
+
+        // Ensure that calling onActivityResult w/o requesting a result doesn't do anything
+        mRouter.onActivityResult(1, Activity.RESULT_OK, null);
+        assertCalls(childExpectedCallState, child);
+        assertCalls(parentExpectedCallState, parent);
+
+        // Ensure starting an activity for result gets us the result back
+        child.startActivityForResult(new Intent("action"), 1);
+        mRouter.onActivityResult(1, Activity.RESULT_OK, null);
+        childExpectedCallState.onActivityResultCalls++;
+        assertCalls(childExpectedCallState, child);
+        assertCalls(parentExpectedCallState, parent);
+
+        // Ensure requesting a result w/o calling startActivityForResult works
+        child.registerForActivityResult(2);
+        mRouter.onActivityResult(2, Activity.RESULT_OK, null);
+        childExpectedCallState.onActivityResultCalls++;
+        assertCalls(childExpectedCallState, child);
+        assertCalls(parentExpectedCallState, parent);
     }
 
-    private void assertCalls(int changeStart, int changeEnd, int bindView, int attach, int unbindView, int detach, int destroy) {
-        Assert.assertEquals(changeStart, mChangeStartCalls);
-        Assert.assertEquals(changeEnd, mChangeEndCalls);
-        Assert.assertEquals(bindView, mCreateViewCalls);
-        Assert.assertEquals(attach, mAttachCalls);
-        Assert.assertEquals(unbindView, mDestroyViewCalls);
-        Assert.assertEquals(detach, mDetachCalls);
-        Assert.assertEquals(destroy, mDestroyCalls);
+    @Test
+    public void testPermissionResult() {
+        final String[] requestedPermissions = new String[] {"test"};
+
+        TestController controller = new TestController();
+        CallState expectedCallState = new CallState(true);
+
+        mRouter.pushController(RouterTransaction.builder(controller).build());
+        ViewUtils.setAttached(controller.getView(), true);
+
+        // Ensure that calling handleRequestedPermission w/o requesting a result doesn't do anything
+        mRouter.onRequestPermissionsResult("anotherId", 1, requestedPermissions, new int[] {1});
+        assertCalls(expectedCallState, controller);
+
+        // Ensure requesting the permission gets us the result back
+        try {
+            controller.requestPermissions(requestedPermissions, 1);
+        } catch (NoSuchMethodError ignored) { }
+
+        mRouter.onRequestPermissionsResult(controller.getInstanceId(), 1, requestedPermissions, new int[] {1});
+        expectedCallState.onRequestPermissionsResultCalls++;
+        assertCalls(expectedCallState, controller);
     }
 
-    private void attachLifecycleListener(Controller controller) {
-        controller.addLifecycleListener(new LifecycleListener() {
-            @Override
-            public void onChangeStart(@NonNull Controller controller, @NonNull ControllerChangeHandler changeHandler, @NonNull ControllerChangeType changeType) {
-                mChangeStartCalls++;
-            }
+    @Test
+    public void testPermissionResultForChild() {
+        final String[] requestedPermissions = new String[] {"test"};
 
-            @Override
-            public void onChangeEnd(@NonNull Controller controller, @NonNull ControllerChangeHandler changeHandler, @NonNull ControllerChangeType changeType) {
-                mChangeEndCalls++;
-            }
+        TestController parent = new TestController();
+        TestController child = new TestController();
 
-            @Override
-            public void postCreateView(@NonNull Controller controller, @NonNull View view) {
-                mCreateViewCalls++;
-            }
+        mRouter.pushController(RouterTransaction.builder(parent).build());
+        ViewUtils.setAttached(parent.getView(), true);
+        parent.addChildController(ChildControllerTransaction.builder(child, TestController.VIEW_ID).build());
+        ViewUtils.setAttached(child.getView(), true);
 
-            @Override
-            public void postAttach(@NonNull Controller controller, @NonNull View view) {
-                mAttachCalls++;
-            }
+        CallState childExpectedCallState = new CallState(true);
+        CallState parentExpectedCallState = new CallState(true);
 
-            @Override
-            public void postDestroyView(@NonNull Controller controller) {
-                mDestroyViewCalls++;
-            }
+        // Ensure that calling handleRequestedPermission w/o requesting a result doesn't do anything
+        mRouter.onRequestPermissionsResult("anotherId", 1, requestedPermissions, new int[] {1});
+        assertCalls(childExpectedCallState, child);
+        assertCalls(parentExpectedCallState, parent);
 
-            @Override
-            public void postDetach(@NonNull Controller controller, @NonNull View view) {
-                mDetachCalls++;
-            }
+        // Ensure requesting the permission gets us the result back
+        try {
+            child.requestPermissions(requestedPermissions, 1);
+        } catch (NoSuchMethodError ignored) { }
 
-            @Override
-            public void postDestroy(@NonNull Controller controller) {
-                mDestroyCalls++;
-            }
-        });
+        mRouter.onRequestPermissionsResult(child.getInstanceId(), 1, requestedPermissions, new int[] {1});
+        childExpectedCallState.onRequestPermissionsResultCalls++;
+        assertCalls(childExpectedCallState, child);
+        assertCalls(parentExpectedCallState, parent);
     }
 
-    interface ChangeHandlerListener {
-        void performChange(@NonNull ViewGroup container, View from, View to, boolean isPush, @NonNull ControllerChangeCompletedListener changeListener);
+    @Test
+    public void testOptionsMenu() {
+        TestController controller = new TestController();
+        CallState expectedCallState = new CallState(true);
+
+        mRouter.pushController(RouterTransaction.builder(controller).build());
+        ViewUtils.setAttached(controller.getView(), true);
+
+        // Ensure that calling onCreateOptionsMenu w/o declaring that we have one doesn't do anything
+        mRouter.onCreateOptionsMenu(null, null);
+        assertCalls(expectedCallState, controller);
+
+        // Ensure calling onCreateOptionsMenu with a menu works
+        controller.setHasOptionsMenu(true);
+
+        // Ensure it'll still get called back next time onCreateOptionsMenu is called
+        mRouter.onCreateOptionsMenu(null, null);
+        expectedCallState.createOptionsMenuCalls++;
+        assertCalls(expectedCallState, controller);
+
+        // Ensure we stop getting them when we hide it
+        controller.setOptionsMenuHidden(true);
+        mRouter.onCreateOptionsMenu(null, null);
+        assertCalls(expectedCallState, controller);
+
+        // Ensure we get the callback them when we un-hide it
+        controller.setOptionsMenuHidden(false);
+        mRouter.onCreateOptionsMenu(null, null);
+        expectedCallState.createOptionsMenuCalls++;
+        assertCalls(expectedCallState, controller);
+
+        // Ensure we don't get the callback when we no longer have a menu
+        controller.setHasOptionsMenu(false);
+        mRouter.onCreateOptionsMenu(null, null);
+        assertCalls(expectedCallState, controller);
     }
 
-    public static class ChangeHandler extends ControllerChangeHandler {
+    @Test
+    public void testOptionsMenuForChild() {
+        TestController parent = new TestController();
+        TestController child = new TestController();
 
-        private ChangeHandlerListener mListener;
+        mRouter.pushController(RouterTransaction.builder(parent).build());
+        ViewUtils.setAttached(parent.getView(), true);
+        parent.addChildController(ChildControllerTransaction.builder(child, TestController.VIEW_ID).build());
+        ViewUtils.setAttached(child.getView(), true);
 
-        public ChangeHandler() { }
+        CallState childExpectedCallState = new CallState(true);
+        CallState parentExpectedCallState = new CallState(true);
 
-        public ChangeHandler(ChangeHandlerListener listener) {
-            mListener = listener;
-        }
+        // Ensure that calling onCreateOptionsMenu w/o declaring that we have one doesn't do anything
+        mRouter.onCreateOptionsMenu(null, null);
+        assertCalls(childExpectedCallState, child);
+        assertCalls(parentExpectedCallState, parent);
 
-        @Override
-        public void performChange(@NonNull ViewGroup container, View from, View to, boolean isPush, @NonNull ControllerChangeCompletedListener changeListener) {
-            mListener.performChange(container, from, to, isPush, changeListener);
-        }
+        // Ensure calling onCreateOptionsMenu with a menu works
+        child.setHasOptionsMenu(true);
+
+        // Ensure it'll still get called back next time onCreateOptionsMenu is called
+        mRouter.onCreateOptionsMenu(null, null);
+        childExpectedCallState.createOptionsMenuCalls++;
+        assertCalls(childExpectedCallState, child);
+        assertCalls(parentExpectedCallState, parent);
+
+        // Ensure we stop getting them when we hide it
+        child.setOptionsMenuHidden(true);
+        mRouter.onCreateOptionsMenu(null, null);
+        assertCalls(childExpectedCallState, child);
+        assertCalls(parentExpectedCallState, parent);
+
+        // Ensure we get the callback them when we un-hide it
+        child.setOptionsMenuHidden(false);
+        mRouter.onCreateOptionsMenu(null, null);
+        childExpectedCallState.createOptionsMenuCalls++;
+        assertCalls(childExpectedCallState, child);
+        assertCalls(parentExpectedCallState, parent);
+
+        // Ensure we don't get the callback when we no longer have a menu
+        child.setHasOptionsMenu(false);
+        mRouter.onCreateOptionsMenu(null, null);
+        assertCalls(childExpectedCallState, child);
+        assertCalls(parentExpectedCallState, parent);
     }
+
+    private void assertCalls(CallState callState, TestController controller) {
+        Assert.assertEquals("Expected call counts and controller call counts do not match.", callState, controller.currentCallState);
+    }
+
 }

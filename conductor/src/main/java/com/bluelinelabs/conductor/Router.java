@@ -4,6 +4,9 @@ import android.app.Activity;
 import android.content.Intent;
 import android.os.Bundle;
 import android.support.annotation.NonNull;
+import android.view.Menu;
+import android.view.MenuInflater;
+import android.view.MenuItem;
 import android.view.View;
 import android.view.ViewGroup;
 
@@ -38,19 +41,15 @@ public class Router {
     }
 
     /**
-     * This should be called by the host Activity when its onActivityResult method is called. The call will be forwarded
-     * to the {@link Controller} with the instanceId passed in.
+     * This should be called by the host Activity when its onActivityResult method is called if the instanceId
+     * of the controller that called startActivityForResult is not known.
      *
-     * @param instanceId The instanceId of the Controller to which this result should be forwarded
      * @param requestCode The Activity's onActivityResult requestCode
      * @param resultCode The Activity's onActivityResult resultCode
      * @param data The Activity's onActivityResult data
      */
-    public void onActivityResult(String instanceId, int requestCode, int resultCode, Intent data) {
-        Controller controller = getControllerWithInstanceId(instanceId);
-        if (controller != null) {
-            controller.onActivityResult(requestCode, resultCode, data);
-        }
+    public void onActivityResult(int requestCode, int resultCode, Intent data) {
+        getLifecycleHandler().onActivityResult(requestCode, resultCode, data);
     }
 
     /**
@@ -272,14 +271,10 @@ public class Router {
      */
     public Controller getControllerWithInstanceId(String instanceId) {
         for (ControllerTransaction transaction : mBackStack) {
-            if (transaction.controller.getInstanceId().equals(instanceId)) {
-                return transaction.controller;
-            } else {
-                Controller childWithId = transaction.controller.getChildControllerWithInstanceId(instanceId);
-                if (childWithId != null) {
-                    return childWithId;
+            Controller controllerWithId = transaction.controller.findController(instanceId);
+                if (controllerWithId != null) {
+                    return controllerWithId;
                 }
-            }
         }
         return null;
     }
@@ -347,6 +342,13 @@ public class Router {
         }
     }
 
+    public final void onActivityResult(String instanceId, int requestCode, int resultCode, Intent data) {
+        Controller controller = getControllerWithInstanceId(instanceId);
+        if (controller != null) {
+            controller.onActivityResult(requestCode, resultCode, data);
+        }
+    }
+
     public final void onActivityStarted(Activity activity) {
         for (RouterTransaction transaction : mBackStack) {
             transaction.controller.activityStarted(activity);
@@ -397,6 +399,38 @@ public class Router {
 
     public final void onRestoreInstanceState(Bundle savedInstanceState) {
         mBackStack.restoreInstanceState(savedInstanceState);
+
+        Iterator<RouterTransaction> backstackIterator = mBackStack.reverseIterator();
+        while (backstackIterator.hasNext()) {
+            backstackIterator.next().controller.setRouter(this);
+        }
+    }
+
+    public final void onCreateOptionsMenu(Menu menu, MenuInflater inflater) {
+        for (RouterTransaction transaction : mBackStack) {
+            transaction.controller.createOptionsMenu(menu, inflater);
+        }
+    }
+
+    public final void onPrepareOptionsMenu(Menu menu) {
+        for (RouterTransaction transaction : mBackStack) {
+            transaction.controller.prepareOptionsMenu(menu);
+        }
+    }
+
+    public final boolean onOptionsItemSelected(MenuItem item) {
+        for (RouterTransaction transaction : mBackStack) {
+            if (transaction.controller.optionsItemSelected(item)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    final void invalidateOptionsMenu() {
+        if (mLifecycleHandler != null) {
+            mLifecycleHandler.getFragmentManager().invalidateOptionsMenu();
+        }
     }
 
     private void popToTransaction(@NonNull RouterTransaction transaction, ControllerChangeHandler changeHandler) {
