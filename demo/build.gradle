@@ -11,8 +11,13 @@ apply plugin: 'com.android.application'
 apply plugin: 'com.neenbedankt.android-apt'
 
 android {
-    compileSdkVersion 23
-    buildToolsVersion "23.0.2"
+    compileSdkVersion rootProject.ext.compileSdkVersion
+    buildToolsVersion rootProject.ext.buildToolsVersion
+
+    lintOptions {
+        abortOnError true
+        ignore 'UnusedResources'
+    }
 
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_1_7
@@ -21,10 +26,11 @@ android {
 
     defaultConfig {
         applicationId "com.bluelinelabs.conductor.demo"
-        minSdkVersion 16
-        targetSdkVersion 23
+        minSdkVersion rootProject.ext.minSdkVersion
+        targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 1
         versionName "1.0.0"
+        vectorDrawables.useSupportLibrary true
     }
 
     buildTypes {
@@ -33,20 +39,23 @@ android {
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }
     }
+
+    packagingOptions {
+        exclude 'META-INF/rxjava.properties'
+    }
 }
 
 dependencies {
     compile rootProject.ext.supportV4
     compile rootProject.ext.supportDesign
 
+    apt rootProject.ext.butterknifeCompiler
     compile rootProject.ext.butterknife
+    compile rootProject.ext.picasso
 
-    compile 'com.bluelinelabs:conductor:' + rootProject.ext.publishedVersionName
-    compile 'com.bluelinelabs:conductor-support:' + rootProject.ext.publishedVersionName
-    compile 'com.bluelinelabs:conductor-rxlifecycle:' + rootProject.ext.publishedVersionName
-
-//    compile project(':conductor-support')
-//    compile project(':conductor-rxlifecycle')
+    compile project(':conductor-support')
+    compile project(':conductor-rxlifecycle')
+    compile project(':conductor-rxlifecycle2')
 
     debugCompile rootProject.ext.leakCanary
     releaseCompile rootProject.ext.leakCanaryNoOp

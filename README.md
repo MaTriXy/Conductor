@@ -1,11 +1,11 @@
-[![Travis Build](https://travis-ci.org/bluelinelabs/Conductor.svg)](https://travis-ci.org/bluelinelabs/Conductor) [![Android Arsenal](https://img.shields.io/badge/Android%20Arsenal-Conductor-brightgreen.svg?style=flat)](http://android-arsenal.com/details/1/3361)
+[![Travis Build](https://travis-ci.org/bluelinelabs/Conductor.svg)](https://travis-ci.org/bluelinelabs/Conductor) [![Android Arsenal](https://img.shields.io/badge/Android%20Arsenal-Conductor-brightgreen.svg?style=flat)](http://android-arsenal.com/details/1/3361) [![Javadocs](http://javadoc.io/badge/com.bluelinelabs/conductor.svg)](http://javadoc.io/doc/com.bluelinelabs/conductor)
 
 # Conductor
 
 A small, yet full-featured framework that allows building View-based Android applications. Conductor provides a light-weight wrapper around standard Android Views that does just about everything you'd want:
 
-              |  Conductor
-------|------------------------------
+|           |  Conductor  |
+|-----------|-------------|
 :tada: | Easy integration
 :point_up: | Single Activity apps without using Fragments
 :recycle: | Simple but powerful lifecycle management
@@ -20,19 +20,42 @@ Conductor is architecture-agnostic and does not try to force any design decision
 ## Installation
 
 ```gradle
-compile 'com.bluelinelabs:conductor:1.1.0'
+compile 'com.bluelinelabs:conductor:2.1.1'
 
 // If you want the components that go along with
 // Android's support libraries (currently just a PagerAdapter):
-compile 'com.bluelinelabs:conductor-support:1.1.0'
+compile 'com.bluelinelabs:conductor-support:2.1.2'
 
-// If you want RxJava/RxAndroid lifecycle support:
-compile 'com.bluelinelabs:conductor-rxlifecycle:1.1.0'
+// If you want RxJava lifecycle support:
+compile 'com.bluelinelabs:conductor-rxlifecycle:2.1.2'
+
+// If you want RxJava2 lifecycle support:
+compile 'com.bluelinelabs:conductor-rxlifecycle2:2.1.2'
+```
+
+SNAPSHOT:
+
+```gradle
+compile 'com.bluelinelabs:conductor:2.1.3-SNAPSHOT'
+compile 'com.bluelinelabs:conductor-support:2.1.3-SNAPSHOT'
+compile 'com.bluelinelabs:conductor-rxlifecycle:2.1.3-SNAPSHOT'
+compile 'com.bluelinelabs:conductor-rxlifecycle2:2.1.3-SNAPSHOT'
+```
+
+You also have to add the url to the snapshot repository:
+
+```gradle
+allprojects {
+  repositories {
+    ...
+
+    maven { url "https://oss.sonatype.org/content/repositories/snapshots/" }
+}
 ```
 
 ## Components to Know
 
-              |  Conductor Components
+|             |  Conductor Components |
 ------|------------------------------
 __Controller__ | The Controller is the View wrapper that will give you all of your lifecycle management features. Think of it as a lighter-weight and more predictable Fragment alternative with an easier to manage lifecycle.
 __Router__ | A Router implements navigation and backstack handling for Controllers. Router objects are attached to Activity/containing ViewGroup pairs. Routers do not directly render or push Views to the container ViewGroup, but instead defer this responsibility to the ControllerChangeHandler specified in a given transaction.
@@ -46,7 +69,7 @@ __ControllerTransaction__ | Transactions are used to define data about adding Co
 ```java
 public class MainActivity extends Activity {
 
-    private Router mRouter;
+    private Router router;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -54,17 +77,17 @@ public class MainActivity extends Activity {
 
         setContentView(R.layout.activity_main);
 
-        ViewGroup container = (ViewGroup)findViewById(R.id.controller_container)
+        ViewGroup container = (ViewGroup)findViewById(R.id.controller_container);
 
-        mRouter = Conductor.attachRouter(this, container, savedInstanceState);
-        if (!mRouter.hasRootController()) {
-            mRouter.setRoot(new HomeController());
+        router = Conductor.attachRouter(this, container, savedInstanceState);
+        if (!router.hasRootController()) {
+            router.setRoot(RouterTransaction.with(new HomeController()));
         }
     }
 
     @Override
     public void onBackPressed() {
-        if (!mRouter.handleBack()) {
+        if (!router.handleBack()) {
             super.onBackPressed();
         }
     }
@@ -95,7 +118,7 @@ public class HomeController extends Controller {
 
 The lifecycle of a Controller is significantly simpler to understand than that of a Fragment. A lifecycle diagram is shown below:
 
-![Controller Lifecycle](docs/Controller Lifecycle.jpg)
+![Controller Lifecycle](docs/Controller%20Lifecycle.jpg)
 
 ## Advanced Topics
 
@@ -105,11 +128,11 @@ The lifecycle of a Controller is significantly simpler to understand than that o
 ### Custom Change Handlers
 `ControllerChangeHandler` can be subclassed in order to perform different functions when changing between two `Controllers`. Two convenience `ControllerChangeHandler` subclasses are included to cover most basic needs: `AnimatorChangeHandler`, which will use an `Animator` object to transition between two views, and `TransitionChangeHandler`, which will use Lollipop's `Transition` framework for transitioning between views.
 
-### Child Controllers
-`addChildController` can be called on a `Controller` in order to add nested `Controller`s. Child `Controller`s will receive all lifecycle callbacks that parents get.
+### Child Routers & Controllers
+`getChildRouter` can be called on a `Controller` in order to get a nested `Router` into which child `Controller`s can be pushed. This enables creating advanced layouts, such as Master/Detail.
 
 ### RxJava Lifecycle
-If the RxLifecycle dependency has been added, there is an `RxController` available that can be used along with the standard [RxLifecycle library](https://github.com/trello/RxLifecycle). There is also a `ControllerLifecycleProvider` available if you do not wish to use this subclass. 
+If the RxLifecycle dependency has been added, there is an `RxController` available that can be used along with the standard [RxLifecycle library](https://github.com/trello/RxLifecycle). There is also a `ControllerLifecycleProvider` available if you do not wish to use this subclass.
 
 ## License
 ```

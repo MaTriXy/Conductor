@@ -1,11 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
 
-    <color name="colorPrimary">#78909c</color>
-    <color name="colorPrimaryDark">#37474f</color>
+    <color name="colorPrimary">#263239</color>
+    <color name="colorPrimaryDark">#21272c</color>
     <color name="colorAccent">#1976d2</color>
 
     <color name="white">@android:color/white</color>
+    <color name="immersive_background">#88000000</color>
 
     <color name="red_300">#f36c60</color>
     <color name="light_green_300">#aed581</color>
@@ -25,5 +26,9 @@
     <color name="deep_orange_300">#ff8a65</color>
     <color name="cyan_300">#4dd0e1</color>
     <color name="grey_300">#e0e0e0</color>
+    <color name="grey_400">#78909C</color>
+
+    <color name="dark_icon">#99000000</color>
+    <color name="dialog_background">#fafafa</color>
 
 </resources>

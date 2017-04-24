@@ -14,17 +14,17 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_gravity="center_horizontal"
-            android:textSize="28sp"
+            android:textSize="22sp"
             android:padding="16dp"
             android:text="@string/drag_to_dismiss"
+            android:clickable="true"
             />
 
-        <ScrollView
+        <android.support.v4.widget.NestedScrollView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:clipToPadding="false"
             android:fillViewport="true"
-            android:nestedScrollingEnabled="true"
             android:overScrollFooter="@android:color/transparent"
             android:overScrollMode="never" >
 
@@ -34,9 +34,10 @@
                 android:layout_height="wrap_content"
                 android:background="@color/white"
                 android:padding="16dp"
+                android:text="@string/lorem_ipsum"
                 />
 
-        </ScrollView>
+        </android.support.v4.widget.NestedScrollView>
     </LinearLayout>
 
 </com.bluelinelabs.conductor.demo.widget.ElasticDragDismissFrameLayout>

@@ -1,35 +1,38 @@
 package com.bluelinelabs.conductor.demo.controllers;
 
+import android.content.Context;
 import android.support.annotation.NonNull;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.inputmethod.InputMethodManager;
 import android.widget.EditText;
 
 import com.bluelinelabs.conductor.Controller;
 import com.bluelinelabs.conductor.demo.R;
-import com.bluelinelabs.conductor.demo.controllers.base.RefWatchingController;
+import com.bluelinelabs.conductor.demo.controllers.base.BaseController;
 
-import butterknife.Bind;
+import butterknife.BindView;
 import butterknife.OnClick;
 
-public class TargetTitleEntryController extends RefWatchingController {
+public class TargetTitleEntryController extends BaseController {
 
     public interface TargetTitleEntryControllerListener {
         void onTitlePicked(String option);
     }
 
-    @Bind(R.id.edit_text) EditText mEditText;
+    @BindView(R.id.edit_text) EditText editText;
 
     public <T extends Controller & TargetTitleEntryControllerListener> TargetTitleEntryController(T targetController) {
-        super.setTargetController(targetController);
+        setTargetController(targetController);
     }
 
     public TargetTitleEntryController() { }
 
     @Override
-    public void setTargetController(Controller target) {
-        throw new RuntimeException(getClass().getSimpleName() + "s can only have their target set through the constructor.");
+    protected void onDetach(@NonNull View view) {
+        InputMethodManager imm = (InputMethodManager) editText.getContext().getSystemService(Context.INPUT_METHOD_SERVICE);
+        imm.hideSoftInputFromWindow(editText.getWindowToken(), 0);
     }
 
     @NonNull
@@ -38,10 +41,15 @@ public class TargetTitleEntryController extends RefWatchingController {
         return inflater.inflate(R.layout.controller_target_title_entry, container, false);
     }
 
+    @Override
+    protected String getTitle() {
+        return "Target Controller Demo";
+    }
+
     @OnClick(R.id.btn_use_title) void optionPicked() {
         Controller targetController = getTargetController();
         if (targetController != null) {
-            ((TargetTitleEntryControllerListener)targetController).onTitlePicked(mEditText.getText().toString());
+            ((TargetTitleEntryControllerListener)targetController).onTitlePicked(editText.getText().toString());
             getRouter().popController(this);
         }
     }
