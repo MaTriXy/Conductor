@@ -2,15 +2,17 @@ package com.bluelinelabs.conductor;
 
 import android.os.Bundle;
 import android.support.annotation.NonNull;
+import android.support.annotation.Nullable;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.ViewParent;
 
-import com.bluelinelabs.conductor.ControllerTransaction.ControllerChangeType;
 import com.bluelinelabs.conductor.changehandler.SimpleSwapChangeHandler;
 import com.bluelinelabs.conductor.internal.ClassUtils;
 
-import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * ControllerChangeHandlers are responsible for swapping the View for one Controller to the View
@@ -22,16 +24,21 @@ public abstract class ControllerChangeHandler {
     private static final String KEY_CLASS_NAME = "ControllerChangeHandler.className";
     private static final String KEY_SAVED_STATE = "ControllerChangeHandler.savedState";
 
+    private static final Map<String, ControllerChangeHandler> inProgressPushHandlers = new HashMap<>();
+
+    private boolean forceRemoveViewOnPush;
+    private boolean hasBeenUsed;
+
     /**
      * Responsible for swapping Views from one Controller to another.
      *
-     * @param container The container these Views are hosted in.
-     * @param from The previous View in the container, if any.
-     * @param to The next View that should be put in the container, if any.
-     * @param isPush True if this is a push transaction, false if it's a pop.
+     * @param container      The container these Views are hosted in.
+     * @param from           The previous View in the container or {@code null} if there was no Controller before this transition
+     * @param to             The next View that should be put in the container or {@code null} if no Controller is being transitioned to
+     * @param isPush         True if this is a push transaction, false if it's a pop.
      * @param changeListener This listener must be called when any transitions or animations are completed.
      */
-    public abstract void performChange(@NonNull ViewGroup container, View from, View to, boolean isPush, @NonNull ControllerChangeCompletedListener changeListener);
+    public abstract void performChange(@NonNull ViewGroup container, @Nullable View from, @Nullable View to, boolean isPush, @NonNull ControllerChangeCompletedListener changeListener);
 
     public ControllerChangeHandler() {
         ensureDefaultConstructor();
@@ -51,6 +58,43 @@ public abstract class ControllerChangeHandler {
      */
     public void restoreFromBundle(@NonNull Bundle bundle) { }
 
+    /**
+     * Will be called on change handlers that push a controller if the controller being pushed is
+     * popped before it has completed.
+     *
+     * @param newHandler The change handler that has caused this push to be aborted
+     * @param newTop     The Controller that will now be at the top of the backstack or {@code null}
+     *                   if there will be no new Controller at the top
+     */
+    public void onAbortPush(@NonNull ControllerChangeHandler newHandler, @Nullable Controller newTop) { }
+
+    /**
+     * Will be called on change handlers that push a controller if the controller being pushed is
+     * needs to be attached immediately, without any animations or transitions.
+     */
+    public void completeImmediately() { }
+
+    /**
+     * Returns a copy of this ControllerChangeHandler. This method is internally used by the library, so
+     * ensure it will return an exact copy of your handler if overriding. If not overriding, the handler
+     * will be saved and restored from the Bundle format.
+     */
+    @NonNull
+    public ControllerChangeHandler copy() {
+        return fromBundle(toBundle());
+    }
+
+    /**
+     * Returns whether or not this is a reusable ControllerChangeHandler. Defaults to false and should
+     * ONLY be overridden if there are absolutely no side effects to using this handler more than once.
+     * In the case that a handler is not reusable, it will be copied using the {@link #copy()} method
+     * prior to use.
+     */
+    public boolean isReusable() {
+        return false;
+    }
+
+    @NonNull
     final Bundle toBundle() {
         Bundle bundle = new Bundle();
         bundle.putString(KEY_CLASS_NAME, getClass().getName());
@@ -70,7 +114,8 @@ public abstract class ControllerChangeHandler {
         }
     }
 
-    public static ControllerChangeHandler fromBundle(Bundle bundle) {
+    @Nullable
+    public static ControllerChangeHandler fromBundle(@Nullable Bundle bundle) {
         if (bundle != null) {
             String className = bundle.getString(KEY_CLASS_NAME);
             ControllerChangeHandler changeHandler = ClassUtils.newInstance(className);
@@ -82,20 +127,57 @@ public abstract class ControllerChangeHandler {
         }
     }
 
-    public static void executeChange(final Controller to, final Controller from, boolean isPush, ViewGroup container, ControllerChangeHandler inHandler) {
-        executeChange(to, from, isPush, container, inHandler, new ArrayList<ControllerChangeListener>());
+    static boolean completePushImmediately(@NonNull String controllerInstanceId) {
+        ControllerChangeHandler changeHandler = inProgressPushHandlers.get(controllerInstanceId);
+        if (changeHandler != null) {
+            changeHandler.completeImmediately();
+            inProgressPushHandlers.remove(controllerInstanceId);
+            return true;
+        }
+        return false;
     }
 
-    public static void executeChange(final Controller to, final Controller from, final boolean isPush, final ViewGroup container, final ControllerChangeHandler inHandler, @NonNull final List<ControllerChangeListener> listeners) {
+    static void abortPush(@NonNull Controller toAbort, @Nullable Controller newController, @NonNull ControllerChangeHandler newChangeHandler) {
+        ControllerChangeHandler handlerForPush = inProgressPushHandlers.get(toAbort.getInstanceId());
+        if (handlerForPush != null) {
+            handlerForPush.onAbortPush(newChangeHandler, newController);
+            inProgressPushHandlers.remove(toAbort.getInstanceId());
+        }
+    }
+
+    static void executeChange(@Nullable final Controller to, @Nullable final Controller from, final boolean isPush, @Nullable final ViewGroup container, @Nullable final ControllerChangeHandler inHandler, @NonNull final List<ControllerChangeListener> listeners) {
+        if (isPush && to != null && to.isDestroyed()) {
+            throw new IllegalStateException("Trying to push a controller that has already been destroyed. (" + to.getClass().getSimpleName() + ")");
+        }
+
         if (container != null) {
+            final ControllerChangeHandler handler;
+            if (inHandler == null) {
+                handler = new SimpleSwapChangeHandler();
+            } else if (inHandler.hasBeenUsed && !inHandler.isReusable()) {
+                handler = inHandler.copy();
+            } else {
+                handler = inHandler;
+            }
+            handler.hasBeenUsed = true;
+
+            if (isPush && to != null) {
+                inProgressPushHandlers.put(to.getInstanceId(), handler);
+
+                if (from != null) {
+                    completePushImmediately(from.getInstanceId());
+                }
+            } else if (!isPush && from != null) {
+                abortPush(from, to, handler);
+            }
+
             for (ControllerChangeListener listener : listeners) {
-                listener.onChangeStarted(to, from, isPush, container, inHandler);
+                listener.onChangeStarted(to, from, isPush, container, handler);
             }
 
             final ControllerChangeType toChangeType = isPush ? ControllerChangeType.PUSH_ENTER : ControllerChangeType.POP_ENTER;
             final ControllerChangeType fromChangeType = isPush ? ControllerChangeType.PUSH_EXIT : ControllerChangeType.POP_EXIT;
 
-            final ControllerChangeHandler handler = inHandler != null ? inHandler : new SimpleSwapChangeHandler();
             final View toView;
             if (to != null) {
                 toView = to.inflate(container);
@@ -120,15 +202,31 @@ public abstract class ControllerChangeHandler {
                     }
 
                     if (to != null) {
+                        inProgressPushHandlers.remove(to.getInstanceId());
                         to.changeEnded(handler, toChangeType);
                     }
 
                     for (ControllerChangeListener listener : listeners) {
-                        listener.onChangeCompleted(to, from, isPush, container, inHandler);
+                        listener.onChangeCompleted(to, from, isPush, container, handler);
+                    }
+
+                    if (handler.forceRemoveViewOnPush && fromView != null) {
+                        ViewParent fromParent = fromView.getParent();
+                        if (fromParent != null && fromParent instanceof ViewGroup) {
+                            ((ViewGroup)fromParent).removeView(fromView);
+                        }
                     }
                 }
             });
         }
+    }
+
+    public boolean removesFromViewOnPush() {
+        return true;
+    }
+
+    public void setForceRemoveViewOnPush(boolean force) {
+        forceRemoveViewOnPush = force;
     }
 
     /**
@@ -138,23 +236,24 @@ public abstract class ControllerChangeHandler {
         /**
          * Called when a {@link ControllerChangeHandler} has started changing {@link Controller}s
          *
-         * @param to The new Controller
-         * @param from The old Controller
-         * @param isPush True if this is a push operation, or false if it's a pop.
+         * @param to        The new Controller or {@code null} if no Controller is being transitioned to
+         * @param from      The old Controller or {@code null} if there was no Controller before this transition
+         * @param isPush    True if this is a push operation, or false if it's a pop.
          * @param container The containing ViewGroup
-         * @param handler The change handler being used.
+         * @param handler   The change handler being used.
          */
-        void onChangeStarted(Controller to, Controller from, boolean isPush, ViewGroup container, ControllerChangeHandler handler);
+        void onChangeStarted(@Nullable Controller to, @Nullable Controller from, boolean isPush, @NonNull ViewGroup container, @NonNull ControllerChangeHandler handler);
 
         /**
          * Called when a {@link ControllerChangeHandler} has completed changing {@link Controller}s
-         * @param to The new Controller
-         * @param from The old Controller
-         * @param isPush True if this was a push operation, or false if it's a pop.
+         *
+         * @param to        The new Controller or {@code null} if no Controller is being transitioned to
+         * @param from      The old Controller or {@code null} if there was no Controller before this transition
+         * @param isPush    True if this was a push operation, or false if it's a pop
          * @param container The containing ViewGroup
-         * @param handler The change handler that was used.
+         * @param handler   The change handler that was used.
          */
-        void onChangeCompleted(Controller to, Controller from, boolean isPush, ViewGroup container, ControllerChangeHandler handler);
+        void onChangeCompleted(@Nullable Controller to, @Nullable Controller from, boolean isPush, @NonNull ViewGroup container, @NonNull ControllerChangeHandler handler);
     }
 
     /**

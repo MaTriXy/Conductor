@@ -1,10 +1,13 @@
 package com.bluelinelabs.conductor;
 
 import android.os.Bundle;
+import android.support.annotation.NonNull;
+import android.support.annotation.Nullable;
 
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Deque;
 import java.util.Iterator;
 import java.util.List;
 
@@ -12,34 +15,37 @@ class Backstack implements Iterable<RouterTransaction> {
 
     private static final String KEY_ENTRIES = "Backstack.entries";
 
-    private final ArrayDeque<RouterTransaction> mBackStack = new ArrayDeque<>();
+    private final Deque<RouterTransaction> backstack = new ArrayDeque<>();
 
     @SuppressWarnings("BooleanMethodIsAlwaysInverted")
-    public boolean isEmpty() {
-        return mBackStack.isEmpty();
+    boolean isEmpty() {
+        return backstack.isEmpty();
     }
 
-    public int size() {
-        return mBackStack.size();
+    int size() {
+        return backstack.size();
     }
 
-    public RouterTransaction root() {
-        return mBackStack.size() > 0 ? mBackStack.getLast() : null;
+    @Nullable
+    RouterTransaction root() {
+        return backstack.size() > 0 ? backstack.getLast() : null;
     }
 
-    @Override
+    @Override @NonNull
     public Iterator<RouterTransaction> iterator() {
-        return mBackStack.iterator();
+        return backstack.iterator();
     }
 
-    public Iterator<RouterTransaction> reverseIterator() {
-        return mBackStack.descendingIterator();
+    @NonNull
+    Iterator<RouterTransaction> reverseIterator() {
+        return backstack.descendingIterator();
     }
 
-    public List<RouterTransaction> popTo(RouterTransaction transaction) {
+    @NonNull
+    List<RouterTransaction> popTo(@NonNull RouterTransaction transaction) {
         List<RouterTransaction> popped = new ArrayList<>();
-        if (mBackStack.contains(transaction)) {
-            while (mBackStack.peek() != transaction) {
+        if (backstack.contains(transaction)) {
+            while (backstack.peek() != transaction) {
                 RouterTransaction poppedTransaction = pop();
                 popped.add(poppedTransaction);
             }
@@ -49,25 +55,28 @@ class Backstack implements Iterable<RouterTransaction> {
         return popped;
     }
 
-    public RouterTransaction pop() {
-        RouterTransaction popped = mBackStack.pop();
-        popped.getController().destroy();
+    @NonNull
+    RouterTransaction pop() {
+        RouterTransaction popped = backstack.pop();
+        popped.controller.destroy();
         return popped;
     }
 
-    public RouterTransaction peek() {
-        return mBackStack.peek();
+    @Nullable
+    RouterTransaction peek() {
+        return backstack.peek();
     }
 
-    public void remove(RouterTransaction transaction) {
-        mBackStack.removeFirstOccurrence(transaction);
+    void remove(@NonNull RouterTransaction transaction) {
+        backstack.removeFirstOccurrence(transaction);
     }
 
-    public void push(RouterTransaction transaction) {
-        mBackStack.push(transaction);
+    void push(@NonNull RouterTransaction transaction) {
+        backstack.push(transaction);
     }
 
-    public List<RouterTransaction> popAll() {
+    @NonNull
+    List<RouterTransaction> popAll() {
         List<RouterTransaction> list = new ArrayList<>();
         while (!isEmpty()) {
             list.add(pop());
@@ -75,21 +84,46 @@ class Backstack implements Iterable<RouterTransaction> {
         return list;
     }
 
-    public void detachAndSaveInstanceState(Bundle outState) {
-        ArrayList<Bundle> entryBundles = new ArrayList<>(mBackStack.size());
-        for (RouterTransaction entry : mBackStack) {
-            entryBundles.add(entry.detachAndSaveInstanceState());
+    void setBackstack(@NonNull List<RouterTransaction> backstack) {
+        for (RouterTransaction existingTransaction : this.backstack) {
+            boolean contains = false;
+            for (RouterTransaction newTransaction : backstack) {
+                if (existingTransaction.controller == newTransaction.controller) {
+                    contains = true;
+                    break;
+                }
+            }
+
+            if (!contains) {
+                existingTransaction.controller.destroy();
+            }
+        }
+
+        this.backstack.clear();
+        for (RouterTransaction transaction : backstack) {
+            this.backstack.push(transaction);
+        }
+    }
+
+    boolean contains(@NonNull RouterTransaction transaction) {
+        return backstack.contains(transaction);
+    }
+
+    void saveInstanceState(@NonNull Bundle outState) {
+        ArrayList<Bundle> entryBundles = new ArrayList<>(backstack.size());
+        for (RouterTransaction entry : backstack) {
+            entryBundles.add(entry.saveInstanceState());
         }
 
         outState.putParcelableArrayList(KEY_ENTRIES, entryBundles);
     }
 
-    public void restoreInstanceState(Bundle savedInstanceState) {
+    void restoreInstanceState(@NonNull Bundle savedInstanceState) {
         ArrayList<Bundle> entryBundles = savedInstanceState.getParcelableArrayList(KEY_ENTRIES);
         if (entryBundles != null) {
             Collections.reverse(entryBundles);
             for (Bundle transactionBundle : entryBundles) {
-                mBackStack.push(new RouterTransaction(transactionBundle));
+                backstack.push(new RouterTransaction(transactionBundle));
             }
         }
     }

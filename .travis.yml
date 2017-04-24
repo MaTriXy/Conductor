@@ -3,9 +3,11 @@ language: android
 android:
   components:
     - tools
-    - build-tools-23.0.2
-    - android-23
+    - build-tools-25.0.0
+    - android-25
     - extra-android-m2repository
+  licenses:
+    - '.+'
 
 script:
   - ./gradlew test
@@ -14,13 +16,9 @@ jdk:
   - oraclejdk8
 
 branches:
-  except:
-    - v2
-    - feature/nested_controllers
-    - feature/save_restore_lifecycle
-
-before_install:
-  - chmod +x .buildscript/deploy_snapshot.sh
+  only:
+    - develop
+    - master
 
 after_success:
   - .buildscript/deploy_snapshot.sh

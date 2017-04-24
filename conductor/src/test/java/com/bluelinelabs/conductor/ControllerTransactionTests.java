@@ -1,52 +1,32 @@
 package com.bluelinelabs.conductor;
 
 import android.os.Bundle;
-import android.support.annotation.IdRes;
 
 import com.bluelinelabs.conductor.changehandler.HorizontalChangeHandler;
 import com.bluelinelabs.conductor.changehandler.VerticalChangeHandler;
-
-import junit.framework.Assert;
+import com.bluelinelabs.conductor.util.TestController;
 
 import org.junit.Test;
+
+import static org.junit.Assert.assertEquals;
 
 public class ControllerTransactionTests {
 
     @Test
     public void testRouterSaveRestore() {
-        RouterTransaction transaction = RouterTransaction.builder(new TestController())
+        RouterTransaction transaction = RouterTransaction.with(new TestController())
                 .pushChangeHandler(new HorizontalChangeHandler())
                 .popChangeHandler(new VerticalChangeHandler())
-                .tag("Test Tag")
-                .build();
+                .tag("Test Tag");
 
-        Bundle bundle = transaction.detachAndSaveInstanceState();
+        Bundle bundle = transaction.saveInstanceState();
 
         RouterTransaction restoredTransaction = new RouterTransaction(bundle);
 
-        Assert.assertEquals(transaction.getController().getClass(), restoredTransaction.getController().getClass());
-        Assert.assertEquals(transaction.getPushControllerChangeHandler().getClass(), restoredTransaction.getPushControllerChangeHandler().getClass());
-        Assert.assertEquals(transaction.getPopControllerChangeHandler().getClass(), restoredTransaction.getPopControllerChangeHandler().getClass());
-        Assert.assertEquals(transaction.getTag(), restoredTransaction.getTag());
+        assertEquals(transaction.controller.getClass(), restoredTransaction.controller.getClass());
+        assertEquals(transaction.pushChangeHandler().getClass(), restoredTransaction.pushChangeHandler().getClass());
+        assertEquals(transaction.popChangeHandler().getClass(), restoredTransaction.popChangeHandler().getClass());
+        assertEquals(transaction.tag(), restoredTransaction.tag());
     }
 
-    @Test
-    public void testChildSaveRestore() {
-        @IdRes int layoutId = 234;
-        ChildControllerTransaction transaction = ChildControllerTransaction.builder(new TestController(), layoutId)
-                .pushChangeHandler(new HorizontalChangeHandler())
-                .popChangeHandler(new VerticalChangeHandler())
-                .tag("Test Tag")
-                .build();
-
-        Bundle bundle = transaction.detachAndSaveInstanceState();
-
-        ChildControllerTransaction restoredTransaction = new ChildControllerTransaction(bundle);
-
-        Assert.assertEquals(transaction.containerId, restoredTransaction.containerId);
-        Assert.assertEquals(transaction.getController().getClass(), restoredTransaction.getController().getClass());
-        Assert.assertEquals(transaction.getPushControllerChangeHandler().getClass(), restoredTransaction.getPushControllerChangeHandler().getClass());
-        Assert.assertEquals(transaction.getPopControllerChangeHandler().getClass(), restoredTransaction.getPopControllerChangeHandler().getClass());
-        Assert.assertEquals(transaction.getTag(), restoredTransaction.getTag());
-    }
 }

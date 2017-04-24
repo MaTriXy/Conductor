@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <FrameLayout
+    xmlns:tools="http://schemas.android.com/tools"
     android:id="@+id/transition_root"
     xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
@@ -19,6 +20,7 @@
         android:layout_marginTop="96dp"
         android:gravity="center_horizontal"
         android:transitionName="@string/transition_tag_title"
+        tools:targetApi="lollipop"
         />
 
     <android.support.design.widget.FloatingActionButton
@@ -27,10 +29,11 @@
         android:layout_height="wrap_content"
         android:layout_gravity="bottom|right"
         android:layout_margin="24dp"
-        android:src="@drawable/ic_arrow_forward_white_36dp"
+        app:srcCompat="@drawable/ic_arrow_forward_white_36dp"
         app:elevation="0dp"
         app:pressedTranslationZ="0dp"
         android:transitionName="@string/transition_tag_dot"
+        tools:targetApi="lollipop"
         />
 
 </FrameLayout>
