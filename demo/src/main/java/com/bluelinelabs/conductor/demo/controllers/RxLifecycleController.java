@@ -61,8 +61,8 @@ public class RxLifecycleController extends RxController {
     protected View onCreateView(@NonNull LayoutInflater inflater, @NonNull ViewGroup container) {
         Log.i(TAG, "onCreateView() called");
 
-        View view = inflater.inflate(R.layout.controller_rxlifecycle, container, false);
-        view.setBackgroundColor(ContextCompat.getColor(container.getContext(), R.color.teal_300));
+        View view = inflater.inflate(R.layout.controller_lifecycle, container, false);
+        view.setBackgroundColor(ContextCompat.getColor(container.getContext(), R.color.red_300));
         unbinder = ButterKnife.bind(this, view);
 
         tvTitle.setText(getResources().getString(R.string.rxlifecycle_title, TAG));

@@ -3,11 +3,11 @@ package com.bluelinelabs.conductor.demo.controllers;
 import android.content.Intent;
 import android.graphics.PorterDuff.Mode;
 import android.net.Uri;
-import android.os.Build;
 import android.os.Bundle;
 import android.support.annotation.ColorRes;
 import android.support.annotation.NonNull;
 import android.support.v4.content.ContextCompat;
+import android.support.v4.view.ViewCompat;
 import android.support.v7.widget.LinearLayoutManager;
 import android.support.v7.widget.RecyclerView;
 import android.text.SpannableString;
@@ -28,9 +28,10 @@ import com.bluelinelabs.conductor.ControllerChangeHandler;
 import com.bluelinelabs.conductor.ControllerChangeType;
 import com.bluelinelabs.conductor.RouterTransaction;
 import com.bluelinelabs.conductor.changehandler.FadeChangeHandler;
+import com.bluelinelabs.conductor.changehandler.HorizontalChangeHandler;
 import com.bluelinelabs.conductor.changehandler.TransitionChangeHandlerCompat;
 import com.bluelinelabs.conductor.demo.R;
-import com.bluelinelabs.conductor.demo.changehandler.ArcFadeMoveChangeHandler;
+import com.bluelinelabs.conductor.demo.changehandler.ArcFadeMoveChangeHandlerCompat;
 import com.bluelinelabs.conductor.demo.changehandler.FabToDialogTransitionChangeHandler;
 import com.bluelinelabs.conductor.demo.controllers.NavigationDemoController.DisplayUpMode;
 import com.bluelinelabs.conductor.demo.controllers.base.BaseController;
@@ -41,7 +42,7 @@ import butterknife.OnClick;
 
 public class HomeController extends BaseController {
 
-    private enum HomeDemoModel {
+    private enum DemoModel {
         NAVIGATION("Navigation Demos", R.color.red_300),
         TRANSITIONS("Transition Demos", R.color.blue_grey_300),
         SHARED_ELEMENT_TRANSITIONS("Shared Element Demos", R.color.purple_300),
@@ -51,13 +52,12 @@ public class HomeController extends BaseController {
         MULTIPLE_CHILD_ROUTERS("Multiple Child Routers", R.color.deep_orange_300),
         MASTER_DETAIL("Master Detail", R.color.grey_300),
         DRAG_DISMISS("Drag Dismiss", R.color.lime_300),
-        RX_LIFECYCLE("Rx Lifecycle", R.color.teal_300),
-        RX_LIFECYCLE_2("Rx Lifecycle 2", R.color.brown_300);
+        EXTERNAL_MODULES("Bonus Modules", R.color.teal_300);
 
         String title;
         @ColorRes int color;
 
-        HomeDemoModel(String title, @ColorRes int color) {
+        DemoModel(String title, @ColorRes int color) {
             this.title = title;
             this.color = color;
         }
@@ -84,7 +84,7 @@ public class HomeController extends BaseController {
 
         recyclerView.setHasFixedSize(true);
         recyclerView.setLayoutManager(new LinearLayoutManager(view.getContext()));
-        recyclerView.setAdapter(new HomeAdapter(LayoutInflater.from(view.getContext()), HomeDemoModel.values()));
+        recyclerView.setAdapter(new HomeAdapter(LayoutInflater.from(view.getContext()), DemoModel.values()));
     }
 
     @Override
@@ -163,7 +163,7 @@ public class HomeController extends BaseController {
 
     }
 
-    void onModelRowClick(HomeDemoModel model, int position) {
+    void onModelRowClick(DemoModel model, int position) {
         switch (model) {
             case NAVIGATION:
                 getRouter().pushController(RouterTransaction.with(new NavigationDemoController(0, DisplayUpMode.SHOW_FOR_CHILDREN_ONLY))
@@ -192,24 +192,22 @@ public class HomeController extends BaseController {
                         .popChangeHandler(new FadeChangeHandler()));
                 break;
             case SHARED_ELEMENT_TRANSITIONS:
+                String titleSharedElementName = getResources().getString(R.string.transition_tag_title_indexed, position);
+                String dotSharedElementName = getResources().getString(R.string.transition_tag_dot_indexed, position);
+
                 getRouter().pushController(RouterTransaction.with(new CityGridController(model.title, model.color, position))
-                        .pushChangeHandler(new TransitionChangeHandlerCompat(new ArcFadeMoveChangeHandler(), new FadeChangeHandler()))
-                        .popChangeHandler(new TransitionChangeHandlerCompat(new ArcFadeMoveChangeHandler(), new FadeChangeHandler())));
+                        .pushChangeHandler(new ArcFadeMoveChangeHandlerCompat(titleSharedElementName, dotSharedElementName))
+                        .popChangeHandler(new ArcFadeMoveChangeHandlerCompat(titleSharedElementName, dotSharedElementName)));
                 break;
             case DRAG_DISMISS:
                 getRouter().pushController(RouterTransaction.with(new DragDismissController())
                         .pushChangeHandler(new FadeChangeHandler(false))
                         .popChangeHandler(new FadeChangeHandler()));
                 break;
-            case RX_LIFECYCLE:
-                getRouter().pushController(RouterTransaction.with(new RxLifecycleController())
-                        .pushChangeHandler(new FadeChangeHandler())
-                        .popChangeHandler(new FadeChangeHandler()));
-                break;
-            case RX_LIFECYCLE_2:
-                getRouter().pushController(RouterTransaction.with(new RxLifecycle2Controller())
-                        .pushChangeHandler(new FadeChangeHandler())
-                        .popChangeHandler(new FadeChangeHandler()));
+            case EXTERNAL_MODULES:
+                getRouter().pushController(RouterTransaction.with(new ExternalModulesController())
+                        .pushChangeHandler(new HorizontalChangeHandler())
+                        .popChangeHandler(new HorizontalChangeHandler()));
                 break;
             case MULTIPLE_CHILD_ROUTERS:
                 getRouter().pushController(RouterTransaction.with(new MultipleChildRouterController())
@@ -227,9 +225,9 @@ public class HomeController extends BaseController {
     class HomeAdapter extends RecyclerView.Adapter<HomeAdapter.ViewHolder> {
 
         private final LayoutInflater inflater;
-        private final HomeDemoModel[] items;
+        private final DemoModel[] items;
 
-        public HomeAdapter(LayoutInflater inflater, HomeDemoModel[] items) {
+        public HomeAdapter(LayoutInflater inflater, DemoModel[] items) {
             this.inflater = inflater;
             this.items = items;
         }
@@ -253,7 +251,7 @@ public class HomeController extends BaseController {
 
             @BindView(R.id.tv_title) TextView tvTitle;
             @BindView(R.id.img_dot) ImageView imgDot;
-            private HomeDemoModel model;
+            private DemoModel model;
             private int position;
 
             public ViewHolder(View itemView) {
@@ -261,16 +259,14 @@ public class HomeController extends BaseController {
                 ButterKnife.bind(this, itemView);
             }
 
-            void bind(int position, HomeDemoModel item) {
+            void bind(int position, DemoModel item) {
                 model = item;
                 tvTitle.setText(item.title);
                 imgDot.getDrawable().setColorFilter(ContextCompat.getColor(getActivity(), item.color), Mode.SRC_ATOP);
                 this.position = position;
 
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-                    tvTitle.setTransitionName(getResources().getString(R.string.transition_tag_title_indexed, position));
-                    imgDot.setTransitionName(getResources().getString(R.string.transition_tag_dot_indexed, position));
-                }
+                ViewCompat.setTransitionName(tvTitle, getResources().getString(R.string.transition_tag_title_indexed, position));
+                ViewCompat.setTransitionName(imgDot, getResources().getString(R.string.transition_tag_dot_indexed, position));
             }
 
             @OnClick(R.id.row_root)

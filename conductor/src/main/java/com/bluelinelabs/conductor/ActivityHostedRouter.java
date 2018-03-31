@@ -32,6 +32,8 @@ public class ActivityHostedRouter extends Router {
 
             this.lifecycleHandler = lifecycleHandler;
             this.container = container;
+
+            watchContainerAttach();
         }
     }
 
@@ -127,4 +129,10 @@ public class ActivityHostedRouter extends Router {
     TransactionIndexer getTransactionIndexer() {
         return transactionIndexer;
     }
+
+    @Override
+    public void onContextAvailable() {
+        super.onContextAvailable();
+    }
+
 }

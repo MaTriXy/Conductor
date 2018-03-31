@@ -1,9 +1,9 @@
 package com.bluelinelabs.conductor.demo.controllers;
 
-import android.os.Build;
 import android.os.Bundle;
 import android.support.annotation.DrawableRes;
 import android.support.annotation.NonNull;
+import android.support.v4.view.ViewCompat;
 import android.support.v7.widget.LinearLayoutManager;
 import android.support.v7.widget.RecyclerView;
 import android.view.LayoutInflater;
@@ -84,7 +84,7 @@ public class CityDetailController extends BaseController {
         private final String textViewTransitionName;
         private final String[] details;
 
-        public CityDetailAdapter(LayoutInflater inflater, @DrawableRes String title, int imageDrawableRes, String[] details, String transitionNameBase) {
+        public CityDetailAdapter(LayoutInflater inflater, String title, @DrawableRes int imageDrawableRes, String[] details, String transitionNameBase) {
             this.inflater = inflater;
             this.title = title;
             this.imageDrawableRes = imageDrawableRes;
@@ -145,10 +145,8 @@ public class CityDetailController extends BaseController {
                 imageView.setImageResource(imageDrawableRes);
                 textView.setText(title);
 
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-                    imageView.setTransitionName(imageTransitionName);
-                    textView.setTransitionName(textViewTransitionName);
-                }
+                ViewCompat.setTransitionName(imageView, imageTransitionName);
+                ViewCompat.setTransitionName(textView, textViewTransitionName);
             }
         }
 

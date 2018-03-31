@@ -14,6 +14,7 @@ import android.view.View;
 import android.view.ViewGroup;
 
 import com.bluelinelabs.conductor.Controller.LifecycleListener;
+import com.bluelinelabs.conductor.ControllerChangeHandler.ChangeTransaction;
 import com.bluelinelabs.conductor.ControllerChangeHandler.ControllerChangeListener;
 import com.bluelinelabs.conductor.changehandler.SimpleSwapChangeHandler;
 import com.bluelinelabs.conductor.internal.NoOpControllerChangeHandler;
@@ -35,11 +36,13 @@ public abstract class Router {
     private static final String KEY_BACKSTACK = "Router.backstack";
     private static final String KEY_POPS_LAST_VIEW = "Router.popsLastView";
 
-    protected final Backstack backstack = new Backstack();
+    final Backstack backstack = new Backstack();
     private final List<ControllerChangeListener> changeListeners = new ArrayList<>();
+    private final List<ChangeTransaction> pendingControllerChanges = new ArrayList<>();
     final List<Controller> destroyingControllers = new ArrayList<>();
 
     private boolean popsLastView = false;
+    boolean containerFullyAttached = false;
 
     ViewGroup container;
 
@@ -125,26 +128,37 @@ public abstract class Router {
     public boolean popController(@NonNull Controller controller) {
         ThreadUtils.ensureMainThread();
 
-        RouterTransaction topController = backstack.peek();
-        boolean poppingTopController = topController != null && topController.controller == controller;
+        RouterTransaction topTransaction = backstack.peek();
+        boolean poppingTopController = topTransaction != null && topTransaction.controller == controller;
 
         if (poppingTopController) {
             trackDestroyingController(backstack.pop());
+            performControllerChange(backstack.peek(), topTransaction, false);
         } else {
+            RouterTransaction removedTransaction = null;
+            RouterTransaction nextTransaction = null;
             for (RouterTransaction transaction : backstack) {
                 if (transaction.controller == controller) {
+                    if (controller.isAttached()) {
+                        trackDestroyingController(transaction);
+                    }
                     backstack.remove(transaction);
+                    removedTransaction = transaction;
+                } else if (removedTransaction != null) {
+                    if (!transaction.controller.isAttached()) {
+                        nextTransaction = transaction;
+                    }
                     break;
                 }
             }
-        }
 
-        if (poppingTopController) {
-            performControllerChange(backstack.peek(), topController, false);
+            if (removedTransaction != null) {
+                performControllerChange(nextTransaction, removedTransaction, false);
+            }
         }
 
         if (popsLastView) {
-            return topController != null;
+            return topTransaction != null;
         } else {
             return !backstack.isEmpty();
         }
@@ -365,7 +379,7 @@ public abstract class Router {
      */
     @NonNull
     public List<RouterTransaction> getBackstack() {
-        List<RouterTransaction> list = new ArrayList<>();
+        List<RouterTransaction> list = new ArrayList<>(backstack.size());
         Iterator<RouterTransaction> backstackIterator = backstack.reverseIterator();
         while (backstackIterator.hasNext()) {
             list.add(backstackIterator.next());
@@ -385,29 +399,40 @@ public abstract class Router {
     public void setBackstack(@NonNull List<RouterTransaction> newBackstack, @Nullable ControllerChangeHandler changeHandler) {
         ThreadUtils.ensureMainThread();
 
+        List<RouterTransaction> oldTransactions = getBackstack();
         List<RouterTransaction> oldVisibleTransactions = getVisibleTransactions(backstack.iterator());
-
-        boolean newRootRequiresPush = !(newBackstack.size() > 0 && backstack.contains(newBackstack.get(0)));
 
         removeAllExceptVisibleAndUnowned();
         ensureOrderedTransactionIndices(newBackstack);
 
         backstack.setBackstack(newBackstack);
-        for (RouterTransaction transaction : backstack) {
+
+        // Ensure all new controllers have a valid router set
+        Iterator<RouterTransaction> backstackIterator = backstack.reverseIterator();
+        while (backstackIterator.hasNext()) {
+            RouterTransaction transaction = backstackIterator.next();
             transaction.onAttachedToRouter();
+            setControllerRouter(transaction.controller);
         }
 
         if (newBackstack.size() > 0) {
             List<RouterTransaction> reverseNewBackstack = new ArrayList<>(newBackstack);
             Collections.reverse(reverseNewBackstack);
             List<RouterTransaction> newVisibleTransactions = getVisibleTransactions(reverseNewBackstack.iterator());
+            boolean newRootRequiresPush = !(newVisibleTransactions.size() > 0 && oldTransactions.contains(newVisibleTransactions.get(0)));
 
             boolean visibleTransactionsChanged = !backstacksAreEqual(newVisibleTransactions, oldVisibleTransactions);
             if (visibleTransactionsChanged) {
-                RouterTransaction rootTransaction = oldVisibleTransactions.size() > 0 ? oldVisibleTransactions.get(0) : null;
+                RouterTransaction oldRootTransaction = oldVisibleTransactions.size() > 0 ? oldVisibleTransactions.get(0) : null;
+                RouterTransaction newRootTransaction = newVisibleTransactions.get(0);
+
                 // Replace the old root with the new one
-                if (rootTransaction == null || rootTransaction.controller != newVisibleTransactions.get(0).controller) {
-                    performControllerChange(newVisibleTransactions.get(0), rootTransaction, newRootRequiresPush, changeHandler);
+                if (oldRootTransaction == null || oldRootTransaction.controller != newRootTransaction.controller) {
+                    // Ensure the existing root controller is fully pushed to the view hierarchy
+                    if (oldRootTransaction != null) {
+                        ControllerChangeHandler.completeHandlerImmediately(oldRootTransaction.controller.getInstanceId());
+                    }
+                    performControllerChange(newRootTransaction, oldRootTransaction, newRootRequiresPush, changeHandler);
                 }
 
                 // Remove all visible controllers that were previously on the backstack
@@ -416,6 +441,7 @@ public abstract class Router {
                     if (!newVisibleTransactions.contains(transaction)) {
                         ControllerChangeHandler localHandler = changeHandler != null ? changeHandler.copy() : new SimpleSwapChangeHandler();
                         localHandler.setForceRemoveViewOnPush(true);
+                        ControllerChangeHandler.completeHandlerImmediately(transaction.controller.getInstanceId());
                         performControllerChange(null, transaction, newRootRequiresPush, localHandler);
                     }
                 }
@@ -429,9 +455,22 @@ public abstract class Router {
                 }
             }
 
-            // Ensure all new controllers have a valid router set
-            for (RouterTransaction transaction : newBackstack) {
-                transaction.controller.setRouter(this);
+        }
+
+        // Destroy all old controllers that are no longer on the backstack. We don't do this when we initially
+        // set the backstack to prevent the possibility that they'll be destroyed before the controller
+        // change handler runs.
+        for (RouterTransaction oldTransaction : oldTransactions) {
+            boolean contains = false;
+            for (RouterTransaction newTransaction : newBackstack) {
+                if (oldTransaction.controller == newTransaction.controller) {
+                    contains = true;
+                    break;
+                }
+            }
+
+            if (!contains) {
+                oldTransaction.controller.destroy();
             }
         }
     }
@@ -534,7 +573,7 @@ public abstract class Router {
         changeListeners.clear();
 
         for (RouterTransaction transaction : backstack) {
-            transaction.controller.activityDestroyed(activity.isChangingConfigurations());
+            transaction.controller.activityDestroyed(activity);
 
             for (Router childRouter : transaction.controller.getChildRouters()) {
                 childRouter.onActivityDestroyed(activity);
@@ -543,7 +582,7 @@ public abstract class Router {
 
         for (int index = destroyingControllers.size() - 1; index >= 0; index--) {
             Controller controller = destroyingControllers.get(index);
-            controller.activityDestroyed(activity.isChangingConfigurations());
+            controller.activityDestroyed(activity);
 
             for (Router childRouter : controller.getChildRouters()) {
                 childRouter.onActivityDestroyed(activity);
@@ -555,8 +594,8 @@ public abstract class Router {
 
     void prepareForHostDetach() {
         for (RouterTransaction transaction : backstack) {
-            if (ControllerChangeHandler.completePushImmediately(transaction.controller.getInstanceId())) {
-                transaction.controller.setNeedsAttach();
+            if (ControllerChangeHandler.completeHandlerImmediately(transaction.controller.getInstanceId())) {
+                transaction.controller.setNeedsAttach(true);
             }
             transaction.controller.prepareForHostDetach();
         }
@@ -642,15 +681,32 @@ public abstract class Router {
         }
     }
 
+    void watchContainerAttach() {
+        container.post(new Runnable() {
+            @Override
+            public void run() {
+                containerFullyAttached = true;
+            }
+        });
+    }
+
     void prepareForContainerRemoval() {
+        containerFullyAttached = false;
+
         if (container != null) {
             container.setOnHierarchyChangeListener(null);
         }
     }
 
+    void onContextAvailable() {
+        for (RouterTransaction transaction : backstack) {
+            transaction.controller.onContextAvailable();
+        }
+    }
+
     @NonNull
     final List<Controller> getControllers() {
-        List<Controller> controllers = new ArrayList<>();
+        List<Controller> controllers = new ArrayList<>(backstack.size());
 
         Iterator<RouterTransaction> backstackIterator = backstack.reverseIterator();
         while (backstackIterator.hasNext()) {
@@ -688,20 +744,62 @@ public abstract class Router {
         performControllerChange(to, from, isPush, changeHandler);
     }
 
-    private void performControllerChange(@Nullable final RouterTransaction to, @Nullable final RouterTransaction from, boolean isPush, @Nullable ControllerChangeHandler changeHandler) {
+    void performControllerChange(@Nullable RouterTransaction to, @Nullable RouterTransaction from, boolean isPush, @Nullable ControllerChangeHandler changeHandler) {
         Controller toController = to != null ? to.controller : null;
         Controller fromController = from != null ? from.controller : null;
+        boolean forceDetachDestroy = false;
 
         if (to != null) {
             to.ensureValidIndex(getTransactionIndexer());
             setControllerRouter(toController);
         } else if (backstack.size() == 0 && !popsLastView) {
-            // We're emptying out the backstack. Views get weird if you transition them out, so just no-op it. The hosting
-            // Activity should be handling this by finishing or at least hiding this view.
+            // We're emptying out the backstack. Views get weird if you transition them out, so just no-op it. The host
+            // Activity or controller should be handling this by finishing or at least hiding this view.
             changeHandler = new NoOpControllerChangeHandler();
+            forceDetachDestroy = true;
         }
 
-        ControllerChangeHandler.executeChange(toController, fromController, isPush, container, changeHandler, changeListeners);
+        performControllerChange(toController, fromController, isPush, changeHandler);
+
+        if (forceDetachDestroy && fromController != null && fromController.getView() != null) {
+            fromController.detach(fromController.getView(), true, false);
+        }
+    }
+
+    private void performControllerChange(@Nullable final Controller to, @Nullable final Controller from, final boolean isPush, @Nullable final ControllerChangeHandler changeHandler) {
+        if (isPush && to != null && to.isDestroyed()) {
+            throw new IllegalStateException("Trying to push a controller that has already been destroyed. (" + to.getClass().getSimpleName() + ")");
+        }
+
+        final ChangeTransaction transaction = new ChangeTransaction(to, from, isPush, container, changeHandler, new ArrayList<>(changeListeners));
+
+        if (pendingControllerChanges.size() > 0) {
+            // If we already have changes queued up (awaiting full container attach), queue this one up as well so they don't happen
+            // out of order.
+            pendingControllerChanges.add(transaction);
+        } else if (from != null && (changeHandler == null || changeHandler.removesFromViewOnPush()) && !containerFullyAttached) {
+            // If the change handler will remove the from view, we have to make sure the container is fully attached first so we avoid NPEs
+            // within ViewGroup (details on issue #287). Post this to the container to ensure the attach is complete before we try to remove
+            // anything.
+            pendingControllerChanges.add(transaction);
+            container.post(new Runnable() {
+                @Override
+                public void run() {
+                    performPendingControllerChanges();
+                }
+            });
+        } else {
+            ControllerChangeHandler.executeChange(transaction);
+        }
+    }
+
+    void performPendingControllerChanges() {
+        // We're intentionally using dynamic size checking (list.size()) here so we can account for changes
+        // that occur during this loop (ex: if a controller is popped from within onAttach)
+        for (int i = 0; i < pendingControllerChanges.size(); i++) {
+            ControllerChangeHandler.executeChange(pendingControllerChanges.get(i));
+        }
+        pendingControllerChanges.clear();
     }
 
     protected void pushToBackstack(@NonNull RouterTransaction entry) {
@@ -743,7 +841,7 @@ public abstract class Router {
         }
 
         final int childCount = container.getChildCount();
-        for (int i = 0; i < childCount; i++) {
+        for (int i = childCount - 1; i >= 0; i--) {
             final View child = container.getChildAt(i);
             if (!views.contains(child)) {
                 container.removeView(child);
@@ -751,10 +849,10 @@ public abstract class Router {
         }
     }
 
-    // Swap around transaction indicies to ensure they don't get thrown out of order by the
+    // Swap around transaction indices to ensure they don't get thrown out of order by the
     // developer rearranging the backstack at runtime.
     private void ensureOrderedTransactionIndices(List<RouterTransaction> backstack) {
-        List<Integer> indices = new ArrayList<>();
+        List<Integer> indices = new ArrayList<>(backstack.size());
         for (RouterTransaction transaction : backstack) {
             transaction.ensureValidIndex(getTransactionIndexer());
             indices.add(transaction.transactionIndex);
@@ -811,6 +909,7 @@ public abstract class Router {
 
     void setControllerRouter(@NonNull Controller controller) {
         controller.setRouter(this);
+        controller.onContextAvailable();
     }
 
     abstract void invalidateOptionsMenu();

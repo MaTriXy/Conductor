@@ -1,23 +1,8 @@
-buildscript {
-    repositories {
-        jcenter()
-    }
-    dependencies {
-        classpath 'com.neenbedankt.gradle.plugins:android-apt:1.8'
-    }
-}
-
 apply plugin: 'com.android.application'
-apply plugin: 'com.neenbedankt.android-apt'
 
 android {
     compileSdkVersion rootProject.ext.compileSdkVersion
     buildToolsVersion rootProject.ext.buildToolsVersion
-
-    lintOptions {
-        abortOnError true
-        ignore 'UnusedResources'
-    }
 
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_1_7
@@ -49,13 +34,15 @@ dependencies {
     compile rootProject.ext.supportV4
     compile rootProject.ext.supportDesign
 
-    apt rootProject.ext.butterknifeCompiler
+    annotationProcessor rootProject.ext.butterknifeCompiler
     compile rootProject.ext.butterknife
     compile rootProject.ext.picasso
 
-    compile project(':conductor-support')
-    compile project(':conductor-rxlifecycle')
-    compile project(':conductor-rxlifecycle2')
+    compile project(':conductor-modules:support')
+    compile project(':conductor-modules:rxlifecycle')
+    compile project(':conductor-modules:rxlifecycle2')
+    compile project(':conductor-modules:autodispose')
+    compile project(':conductor-modules:arch-components-lifecycle')
 
     debugCompile rootProject.ext.leakCanary
     releaseCompile rootProject.ext.leakCanaryNoOp

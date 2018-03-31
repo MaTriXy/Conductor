@@ -44,6 +44,12 @@ class ControllerHostedRouter extends Router {
 
             hostController = controller;
             this.container = container;
+
+            for (RouterTransaction transaction : backstack) {
+                transaction.controller.setParentController(controller);
+            }
+
+            watchContainerAttach();
         }
     }
 

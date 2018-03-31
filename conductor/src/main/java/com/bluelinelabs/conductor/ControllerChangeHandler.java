@@ -24,9 +24,9 @@ public abstract class ControllerChangeHandler {
     private static final String KEY_CLASS_NAME = "ControllerChangeHandler.className";
     private static final String KEY_SAVED_STATE = "ControllerChangeHandler.savedState";
 
-    private static final Map<String, ControllerChangeHandler> inProgressPushHandlers = new HashMap<>();
+    static final Map<String, ChangeHandlerData> inProgressChangeHandlers = new HashMap<>();
 
-    private boolean forceRemoveViewOnPush;
+    boolean forceRemoveViewOnPush;
     private boolean hasBeenUsed;
 
     /**
@@ -127,29 +127,34 @@ public abstract class ControllerChangeHandler {
         }
     }
 
-    static boolean completePushImmediately(@NonNull String controllerInstanceId) {
-        ControllerChangeHandler changeHandler = inProgressPushHandlers.get(controllerInstanceId);
-        if (changeHandler != null) {
-            changeHandler.completeImmediately();
-            inProgressPushHandlers.remove(controllerInstanceId);
+    static boolean completeHandlerImmediately(@NonNull String controllerInstanceId) {
+        ChangeHandlerData changeHandlerData = inProgressChangeHandlers.get(controllerInstanceId);
+        if (changeHandlerData != null) {
+            changeHandlerData.changeHandler.completeImmediately();
+            inProgressChangeHandlers.remove(controllerInstanceId);
             return true;
         }
         return false;
     }
 
-    static void abortPush(@NonNull Controller toAbort, @Nullable Controller newController, @NonNull ControllerChangeHandler newChangeHandler) {
-        ControllerChangeHandler handlerForPush = inProgressPushHandlers.get(toAbort.getInstanceId());
-        if (handlerForPush != null) {
-            handlerForPush.onAbortPush(newChangeHandler, newController);
-            inProgressPushHandlers.remove(toAbort.getInstanceId());
+    static void abortOrComplete(@NonNull Controller toAbort, @Nullable Controller newController, @NonNull ControllerChangeHandler newChangeHandler) {
+        ChangeHandlerData changeHandlerData = inProgressChangeHandlers.get(toAbort.getInstanceId());
+        if (changeHandlerData != null) {
+            if (changeHandlerData.isPush) {
+                changeHandlerData.changeHandler.onAbortPush(newChangeHandler, newController);
+            } else {
+                changeHandlerData.changeHandler.completeImmediately();
+            }
+
+            inProgressChangeHandlers.remove(toAbort.getInstanceId());
         }
     }
 
-    static void executeChange(@Nullable final Controller to, @Nullable final Controller from, final boolean isPush, @Nullable final ViewGroup container, @Nullable final ControllerChangeHandler inHandler, @NonNull final List<ControllerChangeListener> listeners) {
-        if (isPush && to != null && to.isDestroyed()) {
-            throw new IllegalStateException("Trying to push a controller that has already been destroyed. (" + to.getClass().getSimpleName() + ")");
-        }
+    static void executeChange(@NonNull final ChangeTransaction transaction) {
+        executeChange(transaction.to, transaction.from, transaction.isPush, transaction.container, transaction.changeHandler, transaction.listeners);
+    }
 
+    private static void executeChange(@Nullable final Controller to, @Nullable final Controller from, final boolean isPush, @Nullable final ViewGroup container, @Nullable final ControllerChangeHandler inHandler, @NonNull final List<ControllerChangeListener> listeners) {
         if (container != null) {
             final ControllerChangeHandler handler;
             if (inHandler == null) {
@@ -161,14 +166,16 @@ public abstract class ControllerChangeHandler {
             }
             handler.hasBeenUsed = true;
 
-            if (isPush && to != null) {
-                inProgressPushHandlers.put(to.getInstanceId(), handler);
-
-                if (from != null) {
-                    completePushImmediately(from.getInstanceId());
+            if (from != null) {
+                if (isPush) {
+                    completeHandlerImmediately(from.getInstanceId());
+                } else {
+                    abortOrComplete(from, to, handler);
                 }
-            } else if (!isPush && from != null) {
-                abortPush(from, to, handler);
+            }
+
+            if (to != null) {
+                inProgressChangeHandlers.put(to.getInstanceId(), new ChangeHandlerData(handler, isPush));
             }
 
             for (ControllerChangeListener listener : listeners) {
@@ -202,7 +209,7 @@ public abstract class ControllerChangeHandler {
                     }
 
                     if (to != null) {
-                        inProgressPushHandlers.remove(to.getInstanceId());
+                        inProgressChangeHandlers.remove(to.getInstanceId());
                         to.changeEnded(handler, toChangeType);
                     }
 
@@ -216,6 +223,10 @@ public abstract class ControllerChangeHandler {
                             ((ViewGroup)fromParent).removeView(fromView);
                         }
                     }
+
+                    if (handler.removesFromViewOnPush() && from != null) {
+                        from.setNeedsAttach(false);
+                    }
                 }
             });
         }
@@ -227,6 +238,24 @@ public abstract class ControllerChangeHandler {
 
     public void setForceRemoveViewOnPush(boolean force) {
         forceRemoveViewOnPush = force;
+    }
+
+    static class ChangeTransaction {
+        @Nullable final Controller to;
+        @Nullable final Controller from;
+        final boolean isPush;
+        @Nullable final ViewGroup container;
+        @Nullable final ControllerChangeHandler changeHandler;
+        @NonNull final List<ControllerChangeListener> listeners;
+
+        public ChangeTransaction(@Nullable Controller to, @Nullable Controller from, boolean isPush, @Nullable ViewGroup container, @Nullable ControllerChangeHandler changeHandler, @NonNull List<ControllerChangeListener> listeners) {
+            this.to = to;
+            this.from = from;
+            this.isPush = isPush;
+            this.container = container;
+            this.changeHandler = changeHandler;
+            this.listeners = listeners;
+        }
     }
 
     /**
@@ -265,6 +294,16 @@ public abstract class ControllerChangeHandler {
          * Called when the change is complete.
          */
         void onChangeCompleted();
+    }
+
+    private static class ChangeHandlerData {
+        public final ControllerChangeHandler changeHandler;
+        public final boolean isPush;
+
+        public ChangeHandlerData(ControllerChangeHandler changeHandler, boolean isPush) {
+            this.changeHandler = changeHandler;
+            this.isPush = isPush;
+        }
     }
 
 }
