@@ -6,6 +6,7 @@ import android.view.ViewGroup;
 import com.bluelinelabs.conductor.util.ActivityProxy;
 import com.bluelinelabs.conductor.util.MockChangeHandler;
 import com.bluelinelabs.conductor.util.TestController;
+import com.bluelinelabs.conductor.util.ViewUtils;
 
 import org.junit.Before;
 import org.junit.Test;
@@ -230,6 +231,60 @@ public class ReattachCaseTests {
         assertTrue(controllerA.isAttached());
         assertFalse(controllerB.isAttached());
         assertFalse(childController.isAttached());
+    }
+
+    // Attempt to test https://github.com/bluelinelabs/Conductor/issues/367
+    @Test
+    public void testViewIsAttachedAfterStartedActivityIsRecreated() {
+        Controller controller1 = new TestController();
+        Controller controller2 = new TestController();
+
+        router.setRoot(RouterTransaction.with(controller1));
+        assertTrue(controller1.isAttached());
+
+        // Lock screen
+        Bundle bundle = new Bundle();
+        activityProxy.pause().saveInstanceState(bundle).stop(false);
+
+        // Push a 2nd controller, which will rotate the screen once it unlocked
+        router.pushController(RouterTransaction.with(controller2));
+        assertTrue(controller2.isAttached());
+        assertTrue(controller2.getNeedsAttach());
+
+        // Unlock screen and rotate
+        activityProxy.start();
+        activityProxy.rotate();
+
+        assertTrue(controller2.isAttached());
+    }
+
+    @Test
+    public void testPopMiddleControllerAttaches() {
+        Controller controller1 = new TestController();
+        Controller controller2 = new TestController();
+        Controller controller3 = new TestController();
+
+        router.setRoot(RouterTransaction.with(controller1));
+        router.pushController(RouterTransaction.with(controller2));
+        router.pushController(RouterTransaction.with(controller3));
+        router.popController(controller2);
+
+        assertFalse(controller1.isAttached());
+        assertFalse(controller2.isAttached());
+        assertTrue(controller3.isAttached());
+
+        controller1 = new TestController();
+        controller2 = new TestController();
+        controller3 = new TestController();
+
+        router.setRoot(RouterTransaction.with(controller1));
+        router.pushController(RouterTransaction.with(controller2));
+        router.pushController(RouterTransaction.with(controller3).pushChangeHandler(MockChangeHandler.noRemoveViewOnPushHandler()));
+        router.popController(controller2);
+
+        assertTrue(controller1.isAttached());
+        assertFalse(controller2.isAttached());
+        assertTrue(controller3.isAttached());
     }
 
     private void sleepWakeDevice() {

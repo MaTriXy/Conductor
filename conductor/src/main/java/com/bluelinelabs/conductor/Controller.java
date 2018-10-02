@@ -62,7 +62,7 @@ public abstract class Controller {
 
     Bundle viewState;
     private Bundle savedInstanceState;
-    private boolean isBeingDestroyed;
+    boolean isBeingDestroyed;
     private boolean destroyed;
     private boolean attached;
     private boolean hasOptionsMenu;
@@ -76,6 +76,7 @@ public abstract class Controller {
     private String targetInstanceId;
     private boolean needsAttach;
     private boolean attachedToUnownedParent;
+    private boolean awaitingParentAttach;
     private boolean hasSavedViewState;
     boolean isDetachFrozen;
     private ControllerChangeHandler overriddenPushHandler;
@@ -844,9 +845,16 @@ public abstract class Controller {
     }
 
     final void activityStopped(@NonNull Activity activity) {
+        final boolean attached = this.attached;
+        
         if (viewAttachHandler != null) {
             viewAttachHandler.onActivityStopped();
         }
+
+        if (attached && activity.isChangingConfigurations()) {
+            needsAttach = true;
+        }
+
         onActivityStopped(activity);
     }
 
@@ -879,6 +887,13 @@ public abstract class Controller {
             return;
         }
 
+        if (parentController != null && !parentController.attached) {
+            awaitingParentAttach = true;
+            return;
+        } else {
+            awaitingParentAttach = false;
+        }
+
         hasSavedViewState = false;
 
         List<LifecycleListener> listeners = new ArrayList<>(lifecycleListeners);
@@ -887,7 +902,7 @@ public abstract class Controller {
         }
 
         attached = true;
-        needsAttach = false;
+        needsAttach = router.isActivityStopped;
 
         onAttach(view);
 
@@ -898,6 +913,14 @@ public abstract class Controller {
         listeners = new ArrayList<>(lifecycleListeners);
         for (LifecycleListener lifecycleListener : listeners) {
             lifecycleListener.postAttach(Controller.this, view);
+        }
+
+        for (ControllerHostedRouter childRouter : childRouters) {
+            for (RouterTransaction childTransaction : childRouter.backstack) {
+                if (childTransaction.controller.awaitingParentAttach) {
+                    childTransaction.controller.attach(childTransaction.controller.view);
+                }
+            }
         }
     }
 
@@ -917,7 +940,10 @@ public abstract class Controller {
             }
 
             attached = false;
-            onDetach(view);
+
+            if (!awaitingParentAttach) {
+                onDetach(view);
+            }
 
             if (hasOptionsMenu && !optionsMenuHidden) {
                 router.invalidateOptionsMenu();

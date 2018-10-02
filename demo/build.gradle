@@ -2,7 +2,6 @@ apply plugin: 'com.android.application'
 
 android {
     compileSdkVersion rootProject.ext.compileSdkVersion
-    buildToolsVersion rootProject.ext.buildToolsVersion
 
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_1_7
@@ -33,6 +32,8 @@ android {
 dependencies {
     implementation rootProject.ext.supportV4
     implementation rootProject.ext.supportDesign
+
+    implementation rootProject.ext.archComponentsLiveDataCore // Fix duplicate classes
 
     annotationProcessor rootProject.ext.butterknifeCompiler
     implementation rootProject.ext.butterknife

@@ -5,7 +5,6 @@ apply plugin: 'com.android.library'
 
 android {
     compileSdkVersion rootProject.ext.compileSdkVersion
-    buildToolsVersion rootProject.ext.buildToolsVersion
 
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_1_7
@@ -23,6 +22,7 @@ android {
 dependencies {
     api rootProject.ext.rxJava2
     api rootProject.ext.autodispose
+    api rootProject.ext.autodisposeLifecycle
 
     implementation project(':conductor')
 }
