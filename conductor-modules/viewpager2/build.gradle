@@ -1,0 +1,34 @@
+plugins {
+    id("com.android.library")
+    id("kotlin-android")
+    id("kotlin-parcelize")
+    alias(libs.plugins.mvnpublish)
+}
+
+android {
+    compileSdkVersion libs.versions.compilesdk.get() as Integer
+
+    defaultConfig {
+        minSdkVersion libs.versions.minsdk.get()
+        targetSdkVersion libs.versions.targetsdk.get()
+        versionCode Integer.parseInt(project.VERSION_CODE)
+        versionName project.VERSION_NAME
+    }
+
+    testOptions {
+        unitTests {
+            includeAndroidResources = true
+        }
+    }
+}
+
+dependencies {
+    testImplementation libs.junit
+    testImplementation libs.robolectric
+
+    implementation libs.androidx.appcompat
+    implementation libs.androidx.viewpager2
+    implementation project(':conductor')
+}
+
+ext.artifactId = 'conductor-viewpager2'

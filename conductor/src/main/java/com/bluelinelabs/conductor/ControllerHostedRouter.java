@@ -5,10 +5,12 @@ import android.content.Intent;
 import android.content.IntentSender;
 import android.content.IntentSender.SendIntentException;
 import android.os.Bundle;
-import android.support.annotation.IdRes;
-import android.support.annotation.NonNull;
-import android.support.annotation.Nullable;
+import android.text.TextUtils;
 import android.view.ViewGroup;
+
+import androidx.annotation.IdRes;
+import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 
 import com.bluelinelabs.conductor.ControllerChangeHandler.ControllerChangeListener;
 import com.bluelinelabs.conductor.internal.TransactionIndexer;
@@ -21,33 +23,50 @@ class ControllerHostedRouter extends Router {
 
     private final String KEY_HOST_ID = "ControllerHostedRouter.hostId";
     private final String KEY_TAG = "ControllerHostedRouter.tag";
+    private final String KEY_BOUND_TO_CONTAINER = "ControllerHostedRouter.boundToContainer";
 
     private Controller hostController;
 
     @IdRes private int hostId;
     private String tag;
     private boolean isDetachFrozen;
+    private boolean boundToContainer;
 
-    ControllerHostedRouter() { }
-
-    ControllerHostedRouter(int hostId, @Nullable String tag) {
-        this.hostId = hostId;
-        this.tag = tag;
+    ControllerHostedRouter() {
+        popRootControllerMode = PopRootControllerMode.POP_ROOT_CONTROLLER_BUT_NOT_VIEW;
     }
 
-    final void setHost(@NonNull Controller controller, @NonNull ViewGroup container) {
+    ControllerHostedRouter(int hostId, @Nullable String tag, boolean boundToContainer) {
+        this();
+        if (!boundToContainer && tag == null) {
+            throw new IllegalStateException("ControllerHostedRouter can't be created without a tag if not bounded to its container");
+        }
+        this.hostId = hostId;
+        this.tag = tag;
+        this.boundToContainer = boundToContainer;
+    }
+
+    final void setHostController(@NonNull Controller controller) {
+        if (hostController == null) {
+            hostController = controller;
+            setOnBackPressedDispatcherEnabled(controller.onBackPressedDispatcherEnabled);
+        }
+    }
+
+    final void setHostContainer(@NonNull Controller controller, @NonNull ViewGroup container) {
         if (hostController != controller || this.container != container) {
             removeHost();
 
             if (container instanceof ControllerChangeListener) {
-                addChangeListener((ControllerChangeListener)container);
+                addChangeListener((ControllerChangeListener) container);
             }
 
             hostController = controller;
             this.container = container;
+            setOnBackPressedDispatcherEnabled(controller.onBackPressedDispatcherEnabled);
 
             for (RouterTransaction transaction : backstack) {
-                transaction.controller.setParentController(controller);
+                transaction.controller().setParentController(controller);
             }
 
             watchContainerAttach();
@@ -56,7 +75,7 @@ class ControllerHostedRouter extends Router {
 
     final void removeHost() {
         if (container != null && container instanceof ControllerChangeListener) {
-            removeChangeListener((ControllerChangeListener)container);
+            removeChangeListener((ControllerChangeListener) container);
         }
 
         final List<Controller> controllersToDestroy = new ArrayList<>(destroyingControllers);
@@ -66,20 +85,19 @@ class ControllerHostedRouter extends Router {
             }
         }
         for (RouterTransaction transaction : backstack) {
-            if (transaction.controller.getView() != null) {
-                transaction.controller.detach(transaction.controller.getView(), true, false);
+            if (transaction.controller().getView() != null) {
+                transaction.controller().detach(transaction.controller().getView(), true, false);
             }
         }
 
         prepareForContainerRemoval();
-        hostController = null;
         container = null;
     }
 
     final void setDetachFrozen(boolean frozen) {
         isDetachFrozen = frozen;
         for (RouterTransaction transaction : backstack) {
-            transaction.controller.setDetachFrozen(frozen);
+            transaction.controller().setDetachFrozen(frozen);
         }
     }
 
@@ -92,7 +110,7 @@ class ControllerHostedRouter extends Router {
     @Override
     protected void pushToBackstack(@NonNull RouterTransaction entry) {
         if (isDetachFrozen) {
-            entry.controller.setDetachFrozen(true);
+            entry.controller().setDetachFrozen(true);
         }
         super.pushToBackstack(entry);
     }
@@ -101,10 +119,25 @@ class ControllerHostedRouter extends Router {
     public void setBackstack(@NonNull List<RouterTransaction> newBackstack, @Nullable ControllerChangeHandler changeHandler) {
         if (isDetachFrozen) {
             for (RouterTransaction transaction : newBackstack) {
-                transaction.controller.setDetachFrozen(true);
+                transaction.controller().setDetachFrozen(true);
             }
         }
         super.setBackstack(newBackstack, changeHandler);
+    }
+
+    @Override
+    void performControllerChange(@Nullable RouterTransaction to, @Nullable RouterTransaction from, boolean isPush) {
+        super.performControllerChange(to, from, isPush);
+
+        // If we're pushing a transaction that will detach controllers to an unattached child
+        // router, we need mark all other controllers as NOT needing to be reattached.
+        if (to != null && !hostController.isAttached()) {
+            if (to.pushChangeHandler() == null || to.pushChangeHandler().getRemovesFromViewOnPush()) {
+                for (RouterTransaction transaction : backstack) {
+                    transaction.controller().setNeedsAttach(false);
+                }
+            }
+        }
     }
 
     @Override @Nullable
@@ -113,8 +146,8 @@ class ControllerHostedRouter extends Router {
     }
 
     @Override
-    public void onActivityDestroyed(@NonNull Activity activity) {
-        super.onActivityDestroyed(activity);
+    public void onActivityDestroyed(@NonNull Activity activity, boolean isConfigurationChange) {
+        super.onActivityDestroyed(activity, isConfigurationChange);
 
         removeHost();
     }
@@ -184,7 +217,7 @@ class ControllerHostedRouter extends Router {
 
     @Override
     boolean hasHost() {
-        return hostController != null;
+        return hostController != null && container != null;
     }
 
     @Override
@@ -192,6 +225,7 @@ class ControllerHostedRouter extends Router {
         super.saveInstanceState(outState);
 
         outState.putInt(KEY_HOST_ID, hostId);
+        outState.putBoolean(KEY_BOUND_TO_CONTAINER, boundToContainer);
         outState.putString(KEY_TAG, tag);
     }
 
@@ -200,22 +234,32 @@ class ControllerHostedRouter extends Router {
         super.restoreInstanceState(savedInstanceState);
 
         hostId = savedInstanceState.getInt(KEY_HOST_ID);
+        boundToContainer = savedInstanceState.getBoolean(KEY_BOUND_TO_CONTAINER);
         tag = savedInstanceState.getString(KEY_TAG);
     }
 
     @Override
-    void setControllerRouter(@NonNull Controller controller) {
+    void setRouterOnController(@NonNull Controller controller) {
         controller.setParentController(hostController);
-        super.setControllerRouter(controller);
+        super.setRouterOnController(controller);
     }
 
     int getHostId() {
         return hostId;
     }
 
-    @Nullable
-    String getTag() {
-        return tag;
+    boolean matches(int hostId, @Nullable String tag) {
+        if (!boundToContainer && container == null) {
+            if (this.tag == null) {
+                throw new IllegalStateException("Host ID can't be variable with a null tag");
+            }
+            if (this.tag.equals(tag)) {
+                this.hostId = hostId;
+                return true;
+            }
+        }
+
+        return this.hostId == hostId && TextUtils.equals(tag, this.tag);
     }
 
     @Override @NonNull

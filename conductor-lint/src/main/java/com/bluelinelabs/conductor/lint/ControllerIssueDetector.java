@@ -10,19 +10,20 @@ import com.android.tools.lint.detector.api.Issue;
 import com.android.tools.lint.detector.api.JavaContext;
 import com.android.tools.lint.detector.api.Scope;
 import com.android.tools.lint.detector.api.Severity;
+import com.intellij.psi.PsiType;
 
+import org.jetbrains.annotations.NotNull;
 import org.jetbrains.uast.UClass;
 import org.jetbrains.uast.UElement;
 import org.jetbrains.uast.UMethod;
 import org.jetbrains.uast.UParameter;
-import org.jetbrains.uast.UTypeReferenceExpression;
 
 import java.util.Collections;
 import java.util.List;
 
 public final class ControllerIssueDetector extends Detector implements Detector.UastScanner {
 
-    public static final Issue ISSUE =
+    static final Issue ISSUE =
             Issue.create("ValidController", "Controller not instantiatable",
                     "Non-abstract Controller instances must have a default or single-argument constructor"
                             + " that takes a Bundle in order for the system to re-create them in the"
@@ -33,7 +34,7 @@ public final class ControllerIssueDetector extends Detector implements Detector.
 
     @Override
     public List<Class<? extends UElement>> getApplicableUastTypes() {
-        return Collections.<Class<? extends UElement>>singletonList(UClass.class);
+        return Collections.singletonList(UClass.class);
     }
 
     @Override
@@ -42,63 +43,58 @@ public final class ControllerIssueDetector extends Detector implements Detector.
 
         return new UElementHandler() {
             @Override
-            public void visitClass(UClass node) {
+            public void visitClass(@NotNull UClass node) {
                 if (evaluator.isAbstract(node)) {
                     return;
                 }
 
-                boolean hasSuperType = false;
-                for (UTypeReferenceExpression superType : node.getUastSuperTypes()) {
-                    if (CLASS_NAME.equals(superType.asRenderString())) {
-                        hasSuperType = true;
-                        break;
-                    }
-                }
+                final boolean hasSuperType = evaluator.extendsClass(node.getJavaPsi(), CLASS_NAME, true);
                 if (!hasSuperType) {
                     return;
                 }
 
                 if (!evaluator.isPublic(node)) {
                     String message = String.format("This Controller class should be public (%1$s)", node.getQualifiedName());
-                    context.report(ISSUE, node, context.getLocation((UElement) node), message);
+                    context.report(ISSUE, node, context.getLocation(Identify.byName(node)), message);
                     return;
                 }
 
                 if (node.getContainingClass() != null && !evaluator.isStatic(node)) {
                     String message = String.format("This Controller inner class should be static (%1$s)", node.getQualifiedName());
-                    context.report(ISSUE, node, context.getLocation((UElement) node), message);
+                    context.report(ISSUE, node, context.getLocation(Identify.byName(node)), message);
                     return;
                 }
 
-                boolean hasConstructor = false;
+                UMethod constructor = null;
                 boolean hasDefaultConstructor = false;
                 boolean hasBundleConstructor = false;
                 for (UMethod method : node.getMethods()) {
                     if (method.isConstructor()) {
-                        hasConstructor = true;
+                        constructor = method;
                         if (evaluator.isPublic(method)) {
                             List<UParameter> parameters = method.getUastParameters();
-                            if (parameters.size() == 0) {
+                            if (parameters.isEmpty()) {
                                 hasDefaultConstructor = true;
                                 break;
-                            } else if (parameters.size() == 1 &&
-                                    (parameters.get(0).getType().equalsToText(SdkConstants.CLASS_BUNDLE)) ||
-                                    parameters.get(0).getType().equalsToText("Bundle")) {
-                                hasBundleConstructor = true;
+                            } else if (parameters.size() == 1) {
+                                PsiType type = parameters.get(0).getType();
+                                if (type.equalsToText(SdkConstants.CLASS_BUNDLE) || type.equalsToText("Bundle")) {
+                                    hasBundleConstructor = true;
+                                    break;
+                                }
                             }
                         }
                     }
                 }
 
-                if (hasConstructor && !hasDefaultConstructor && !hasBundleConstructor) {
+                if (constructor != null && !hasDefaultConstructor && !hasBundleConstructor) {
                     String message = String.format(
                             "This Controller needs to have either a public default constructor or a" +
                                     " public single-argument constructor that takes a Bundle. (`%1$s`)",
                             node.getQualifiedName());
-                    context.report(ISSUE, node, context.getLocation((UElement) node), message);
+                    context.report(ISSUE, node, context.getLocation(Identify.byName(constructor)), message);
                 }
             }
         };
     }
-    
 }

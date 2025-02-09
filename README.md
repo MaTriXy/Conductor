@@ -1,4 +1,4 @@
-[![Travis Build](https://travis-ci.org/bluelinelabs/Conductor.svg)](https://travis-ci.org/bluelinelabs/Conductor) [![Android Arsenal](https://img.shields.io/badge/Android%20Arsenal-Conductor-brightgreen.svg?style=flat)](http://android-arsenal.com/details/1/3361) [![Javadocs](http://javadoc.io/badge/com.bluelinelabs/conductor.svg)](http://javadoc.io/doc/com.bluelinelabs/conductor)
+[![GitHub Actions Workflow](https://github.com/bluelinelabs/conductor/actions/workflows/main.yml/badge.svg)](https://github.com/bluelinelabs/conductor/actions/workflows/main.yml) [![Android Arsenal](https://img.shields.io/badge/Android%20Arsenal-Conductor-brightgreen.svg?style=flat)](http://android-arsenal.com/details/1/3361) [![Javadocs](http://javadoc.io/badge/com.bluelinelabs/conductor.svg)](http://javadoc.io/doc/com.bluelinelabs/conductor)
 
 # Conductor
 
@@ -13,35 +13,36 @@ A small, yet full-featured framework that allows building View-based Android app
 :twisted_rightwards_arrows: | Beautiful transitions between views
 :floppy_disk: | State persistence
 :phone: | Callbacks for onActivityResult, onRequestPermissionsResult, etc
-:european_post_office: | MVP / MVVM / VIPER / MVC ready
+:european_post_office: | MVP / MVVM / MVI / VIPER / MVC ready
 
 Conductor is architecture-agnostic and does not try to force any design decisions on the developer. We here at BlueLine Labs tend to use either MVP or MVVM, but it would work equally well with standard MVC or whatever else you want to throw at it.
 
 ## Installation
 
+Conductor 4.0 is coming soon. It is already being used in production with many, many millions of users. It is, however, not guaranteed to be API stable. As such, it is being released as a preview rather than a standard release. Preview in this context is _not_ a commentary on stability. It is considered to be up to the same quality standards as the current 3.x stable release.
+Changes in Conductor 4 are available in the [GitHub releases](https://github.com/bluelinelabs/Conductor/releases/). In preparation for the release of the next version, there are currently 3 installation options:
+
+### Latest Stable 3.x
 ```gradle
-implementation 'com.bluelinelabs:conductor:2.1.5'
+def conductorVersion = '3.2.0'
 
-// If you want the components that go along with
-// Android's support libraries (currently just a PagerAdapter):
-implementation 'com.bluelinelabs:conductor-support:2.1.5'
+implementation "com.bluelinelabs:conductor:$conductorVersion"
 
-// If you want RxJava lifecycle support:
-implementation 'com.bluelinelabs:conductor-rxlifecycle:2.1.5'
+// AndroidX Transition change handlers:
+implementation "com.bluelinelabs:conductor-androidx-transition:$conductorVersion"
 
-// If you want RxJava2 lifecycle support:
-implementation 'com.bluelinelabs:conductor-rxlifecycle2:2.1.5'
+// ViewPager PagerAdapter:
+implementation "com.bluelinelabs:conductor-viewpager:$conductorVersion"
 
-// If you want RxJava2 Autodispose support:
-implementation 'com.bluelinelabs:conductor-autodispose:2.1.5'
-
-// If you want Controllers that are Lifecycle-aware (architecture components):
-implementation 'com.bluelinelabs:conductor-archlifecycle:2.1.5'
+// ViewPager2 Adapter:
+implementation "com.bluelinelabs:conductor-viewpager2:$conductorVersion"
 ```
 
-**SNAPSHOT**
+### 4.0 Preview
+Use `4.0.0-preview-4` as your version number in any of the dependencies above.
 
-Just use `2.1.6-SNAPSHOT` as your version number in any of the dependencies above and add the url to the snapshot repository:
+### SNAPSHOT
+Use `4.0.0-SNAPSHOT` as your version number in any of the dependencies above and add the url to the snapshot repository:
 
 ```gradle
 allprojects {
@@ -58,53 +59,49 @@ allprojects {
 __Controller__ | The Controller is the View wrapper that will give you all of your lifecycle management features. Think of it as a lighter-weight and more predictable Fragment alternative with an easier to manage lifecycle.
 __Router__ | A Router implements navigation and backstack handling for Controllers. Router objects are attached to Activity/containing ViewGroup pairs. Routers do not directly render or push Views to the container ViewGroup, but instead defer this responsibility to the ControllerChangeHandler specified in a given transaction.
 __ControllerChangeHandler__ | ControllerChangeHandlers are responsible for swapping the View for one Controller to the View of another. They can be useful for performing animations and transitions between Controllers. Several default ControllerChangeHandlers are included.
-__ControllerTransaction__ | Transactions are used to define data about adding Controllers. RouterControllerTransactions are used to push a Controller to a Router with specified ControllerChangeHandlers, while ChildControllerTransactions are used to add child Controllers.
+__RouterTransaction__ | Transactions are used to define data about adding Controllers. RouterTransactions are used to push a Controller to a Router with specified ControllerChangeHandlers, while ChildControllerTransactions are used to add child Controllers.
 
 ## Getting Started
 
 ### Minimal Activity implementation
 
-```java
-public class MainActivity extends Activity {
+```kotlin
+class MainActivity : AppCompatActivity() {
 
-    private Router router;
+    private lateinit var router: Router
 
-    @Override
-    protected void onCreate(Bundle savedInstanceState) {
-        super.onCreate(savedInstanceState);
+    override fun onCreate(savedInstanceState: Bundle?) {
+      super.onCreate(savedInstanceState)
 
-        setContentView(R.layout.activity_main);
+      setContentView(R.layout.activity_main)
 
-        ViewGroup container = (ViewGroup) findViewById(R.id.controller_container);
+      val container = findViewById<ViewGroup>(R.id.controller_container)
 
-        router = Conductor.attachRouter(this, container, savedInstanceState);
-        if (!router.hasRootController()) {
-            router.setRoot(RouterTransaction.with(new HomeController()));
-        }
+      router = Conductor.attachRouter(this, binding.controllerContainer, savedInstanceState)
+        .setPopRootControllerMode(PopRootControllerMode.NEVER)
+        .setOnBackPressedDispatcherEnabled(true)
+
+      if (!router.hasRootController()) {
+        router.setRoot(RouterTransaction.with(HomeController()))
+      }
     }
-
-    @Override
-    public void onBackPressed() {
-        if (!router.handleBack()) {
-            super.onBackPressed();
-        }
-    }
-
 }
 ```
 
 ### Minimal Controller implementation
 
-```java
-public class HomeController extends Controller {
+```kotlin
+class HomeController : Controller() {
 
-    @Override
-    protected View onCreateView(@NonNull LayoutInflater inflater, @NonNull ViewGroup container) {
-        View view = inflater.inflate(R.layout.controller_home, container, false);
-        ((TextView) view.findViewById(R.id.tv_title)).setText("Hello World");
-        return view;
-    }
-
+  override fun onCreateView(
+    inflater: LayoutInflater,
+    container: ViewGroup,
+    savedViewState: Bundle?
+  ): View {
+    val view = inflater.inflate(R.layout.controller_home, container, false)
+    view.findViewById<TextView>(R.id.tv_title).text = "Hello World"
+    return view  
+  }
 }
 ```
 
@@ -142,7 +139,7 @@ The community has provided several helpful modules to make developing apps with 
 
 ## License
 ```
-Copyright 2016 BlueLine Labs, Inc.
+Copyright 2020 BlueLine Labs, Inc.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.

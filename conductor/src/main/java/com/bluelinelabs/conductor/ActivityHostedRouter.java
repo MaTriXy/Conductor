@@ -5,9 +5,10 @@ import android.content.Intent;
 import android.content.IntentSender;
 import android.content.IntentSender.SendIntentException;
 import android.os.Bundle;
-import android.support.annotation.NonNull;
-import android.support.annotation.Nullable;
 import android.view.ViewGroup;
+
+import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 
 import com.bluelinelabs.conductor.ControllerChangeHandler.ControllerChangeListener;
 import com.bluelinelabs.conductor.internal.LifecycleHandler;
@@ -19,6 +20,10 @@ public class ActivityHostedRouter extends Router {
 
     private LifecycleHandler lifecycleHandler;
     private final TransactionIndexer transactionIndexer = new TransactionIndexer();
+
+    public ActivityHostedRouter() {
+        popRootControllerMode = PopRootControllerMode.NEVER;
+    }
 
     public final void setHost(@NonNull LifecycleHandler lifecycleHandler, @NonNull ViewGroup container) {
         if (this.lifecycleHandler != lifecycleHandler || this.container != container) {
@@ -57,15 +62,18 @@ public class ActivityHostedRouter extends Router {
     }
 
     @Override
-    public void onActivityDestroyed(@NonNull Activity activity) {
-        super.onActivityDestroyed(activity);
-        lifecycleHandler = null;
+    public void onActivityDestroyed(@NonNull Activity activity, boolean isConfigurationChange) {
+        super.onActivityDestroyed(activity, isConfigurationChange);
+
+        if (!isConfigurationChange) {
+            lifecycleHandler = null;
+        }
     }
 
     @Override
     public final void invalidateOptionsMenu() {
-        if (lifecycleHandler != null && lifecycleHandler.getFragmentManager() != null) {
-            lifecycleHandler.getFragmentManager().invalidateOptionsMenu();
+        if (lifecycleHandler != null && getActivity() != null) {
+            getActivity().invalidateOptionsMenu();
         }
     }
 
@@ -81,7 +89,7 @@ public class ActivityHostedRouter extends Router {
 
     @Override
     void startActivityForResult(@NonNull String instanceId, @NonNull Intent intent, int requestCode) {
-        lifecycleHandler.startActivityForResult(instanceId, intent, requestCode);
+        lifecycleHandler.startActivityForResult(instanceId, intent, requestCode, null);
     }
 
     @Override

@@ -18,26 +18,20 @@ package com.bluelinelabs.conductor.demo.util;
 
 import android.animation.Animator;
 import android.animation.TimeInterpolator;
-import android.annotation.TargetApi;
-import android.os.Build;
-import android.support.annotation.NonNull;
-import android.support.v4.view.animation.FastOutLinearInInterpolator;
-import android.support.v4.view.animation.FastOutSlowInInterpolator;
-import android.support.v4.view.animation.LinearOutSlowInInterpolator;
-import android.transition.Transition;
 import android.util.ArrayMap;
-import android.util.FloatProperty;
-import android.util.IntProperty;
-import android.util.Property;
 import android.view.animation.Interpolator;
 import android.view.animation.LinearInterpolator;
+import androidx.annotation.NonNull;
+import androidx.interpolator.view.animation.FastOutLinearInInterpolator;
+import androidx.interpolator.view.animation.FastOutSlowInInterpolator;
+import androidx.interpolator.view.animation.LinearOutSlowInInterpolator;
+import androidx.transition.Transition;
 
 import java.util.ArrayList;
 
 /**
  * Utility methods for working with animations.
  */
-@TargetApi(Build.VERSION_CODES.LOLLIPOP)
 public class AnimUtils {
 
     private AnimUtils() { }
@@ -80,115 +74,11 @@ public class AnimUtils {
     }
 
     /**
-     * Linear interpolate between a and b with parameter t.
-     */
-    public static float lerp(float a, float b, float t) {
-        return a + (b - a) * t;
-    }
-
-    /**
-     * A delegate for creating a {@link Property} of <code>int</code> type.
-     */
-    public static abstract class IntProp<T> {
-
-        public final String name;
-
-        public IntProp(String name) {
-            this.name = name;
-        }
-
-        public abstract void set(T object, int value);
-        public abstract int get(T object);
-    }
-
-    /**
-     * The animation framework has an optimization for <code>Properties</code> of type
-     * <code>int</code> but it was only made public in API24, so wrap the impl in our own type
-     * and conditionally create the appropriate type, delegating the implementation.
-     */
-    public static <T> Property<T, Integer> createIntProperty(final IntProp<T> impl) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-            return new IntProperty<T>(impl.name) {
-                @Override
-                public Integer get(T object) {
-                    return impl.get(object);
-                }
-
-                @Override
-                public void setValue(T object, int value) {
-                    impl.set(object, value);
-                }
-            };
-        } else {
-            return new Property<T, Integer>(Integer.class, impl.name) {
-                @Override
-                public Integer get(T object) {
-                    return impl.get(object);
-                }
-
-                @Override
-                public void set(T object, Integer value) {
-                    impl.set(object, value);
-                }
-            };
-        }
-    }
-
-    /**
-     * A delegate for creating a {@link Property} of <code>float</code> type.
-     */
-    public static abstract class FloatProp<T> {
-
-        public final String name;
-
-        protected FloatProp(String name) {
-            this.name = name;
-        }
-
-        public abstract void set(T object, float value);
-        public abstract float get(T object);
-    }
-
-    /**
-     * The animation framework has an optimization for <code>Properties</code> of type
-     * <code>float</code> but it was only made public in API24, so wrap the impl in our own type
-     * and conditionally create the appropriate type, delegating the implementation.
-     */
-    public static <T> Property<T, Float> createFloatProperty(final FloatProp<T> impl) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-            return new FloatProperty<T>(impl.name) {
-                @Override
-                public Float get(T object) {
-                    return impl.get(object);
-                }
-
-                @Override
-                public void setValue(T object, float value) {
-                    impl.set(object, value);
-                }
-            };
-        } else {
-            return new Property<T, Float>(Float.class, impl.name) {
-                @Override
-                public Float get(T object) {
-                    return impl.get(object);
-                }
-
-                @Override
-                public void set(T object, Float value) {
-                    impl.set(object, value);
-                }
-            };
-        }
-    }
-
-    /**
      * https://halfthought.wordpress.com/2014/11/07/reveal-transition/
      * <p/>
      * Interrupting Activity transitions can yield an OperationNotSupportedException when the
      * transition tries to pause the animator. Yikes! We can fix this by wrapping the Animator:
      */
-    @TargetApi(Build.VERSION_CODES.KITKAT)
     public static class NoPauseAnimator extends Animator {
         private final Animator mAnimator;
         private final ArrayMap<AnimatorListener, AnimatorListener> mListeners = new ArrayMap<>();
@@ -344,7 +234,6 @@ public class AnimUtils {
         }
     }
 
-    @TargetApi(Build.VERSION_CODES.KITKAT)
     public static abstract class TransitionEndListener implements Transition.TransitionListener {
         public abstract void onTransitionCompleted(Transition transition);
 

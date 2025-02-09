@@ -1,20 +1,16 @@
 package com.bluelinelabs.conductor.demo.changehandler;
 
 import android.animation.Animator;
-import android.annotation.TargetApi;
-import android.os.Build;
 import android.os.Bundle;
-import android.support.annotation.NonNull;
 import android.view.View;
 import android.view.ViewAnimationUtils;
 import android.view.ViewGroup;
-
+import androidx.annotation.NonNull;
 import com.bluelinelabs.conductor.changehandler.AnimatorChangeHandler;
 
 /**
  * An {@link AnimatorChangeHandler} that will perform a circular reveal
  */
-@TargetApi(Build.VERSION_CODES.LOLLIPOP)
 public class CircularRevealChangeHandler extends AnimatorChangeHandler {
 
     private static final String KEY_CX = "CircularRevealChangeHandler.cx";
@@ -51,7 +47,7 @@ public class CircularRevealChangeHandler extends AnimatorChangeHandler {
      * @param removesFromViewOnPush If true, the view being replaced will be removed from the view hierarchy on pushes
      */
     public CircularRevealChangeHandler(@NonNull View fromView, @NonNull View containerView, boolean removesFromViewOnPush) {
-        this(fromView, containerView, DEFAULT_ANIMATION_DURATION, true);
+        this(fromView, containerView, DEFAULT_ANIMATION_DURATION, removesFromViewOnPush);
     }
 
     /**

@@ -10,17 +10,17 @@ import com.android.tools.lint.detector.api.JavaContext;
 import com.android.tools.lint.detector.api.Scope;
 import com.android.tools.lint.detector.api.Severity;
 
+import org.jetbrains.annotations.NotNull;
 import org.jetbrains.uast.UClass;
 import org.jetbrains.uast.UElement;
 import org.jetbrains.uast.UMethod;
-import org.jetbrains.uast.UTypeReferenceExpression;
 
 import java.util.Collections;
 import java.util.List;
 
 public final class ControllerChangeHandlerIssueDetector extends Detector implements Detector.UastScanner {
 
-    public static final Issue ISSUE =
+    static final Issue ISSUE =
             Issue.create("ValidControllerChangeHandler", "ControllerChangeHandler not instantiatable",
                     "Non-abstract ControllerChangeHandler instances must have a default constructor for the"
                             + " system to re-create them in the case of the process being killed.",
@@ -31,7 +31,7 @@ public final class ControllerChangeHandlerIssueDetector extends Detector impleme
 
     @Override
     public List<Class<? extends UElement>> getApplicableUastTypes() {
-        return Collections.<Class<? extends UElement>>singletonList(UClass.class);
+        return Collections.singletonList(UClass.class);
     }
 
     @Override
@@ -41,53 +41,46 @@ public final class ControllerChangeHandlerIssueDetector extends Detector impleme
         return new UElementHandler() {
 
             @Override
-            public void visitClass(UClass node) {
+            public void visitClass(@NotNull UClass node) {
                 if (evaluator.isAbstract(node)) {
                     return;
                 }
 
-                boolean hasSuperType = false;
-                for (UTypeReferenceExpression superType : node.getUastSuperTypes()) {
-                    if (CLASS_NAME.equals(superType.asRenderString())) {
-                        hasSuperType = true;
-                        break;
-                    }
-                }
+                final boolean hasSuperType = evaluator.extendsClass(node.getJavaPsi(), CLASS_NAME, true);
                 if (!hasSuperType) {
                     return;
                 }
 
                 if (!evaluator.isPublic(node)) {
                     String message = String.format("This ControllerChangeHandler class should be public (%1$s)", node.getQualifiedName());
-                    context.report(ISSUE, node, context.getLocation((UElement) node), message);
+                    context.report(ISSUE, node, context.getLocation(Identify.byName(node)), message);
                     return;
                 }
 
                 if (node.getContainingClass() != null && !evaluator.isStatic(node)) {
                     String message = String.format("This ControllerChangeHandler inner class should be static (%1$s)", node.getQualifiedName());
-                    context.report(ISSUE, node, context.getLocation((UElement) node), message);
+                    context.report(ISSUE, node, context.getLocation(Identify.byName(node)), message);
                     return;
                 }
 
-                boolean hasConstructor = false;
+                UMethod constructor = null;
                 boolean hasDefaultConstructor = false;
                 for (UMethod method : node.getMethods()) {
                     if (method.isConstructor()) {
-                        hasConstructor = true;
-                        if (evaluator.isPublic(method) && method.getUastParameters().size() == 0) {
+                        constructor = method;
+                        if (evaluator.isPublic(method) && method.getUastParameters().isEmpty()) {
                             hasDefaultConstructor = true;
                             break;
                         }
                     }
                 }
 
-                if (hasConstructor && !hasDefaultConstructor) {
+                if (constructor != null && !hasDefaultConstructor) {
                     String message = String.format(
                             "This ControllerChangeHandler needs to have a public default constructor (`%1$s`)", node.getQualifiedName());
-                    context.report(ISSUE, node, context.getLocation((UElement) node), message);
+                    context.report(ISSUE, node, context.getLocation(Identify.byName(constructor)), message);
                 }
             }
         };
     }
-
 }

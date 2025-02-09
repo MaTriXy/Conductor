@@ -5,10 +5,11 @@
 .checkstyle
 
 # IntelliJ IDEA
-.idea
 *.iml
 *.ipr
 *.iws
+/.idea/*
+!/.idea/scopes/
 classes
 gen-external-apklibs
 
@@ -35,6 +36,4 @@ pom.xml.*
 local.properties
 
 *.prefs
-
-# The keystore file
-app/spothero-release.keystore
+.DS_Store
